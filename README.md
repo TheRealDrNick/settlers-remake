@@ -1,6 +1,7 @@
 # JSettlers
 
-This project intends to create a remake of the famous strategy game "The Settlers 3" published by Blue Byte in 1998. The project is developed in Java and runs on PC (Windows/Linux), Mac and Android.
+This project intends to create a remake of the famous strategy game "The Settlers 3" published by Blue Byte in 1998. The project is developed in Java and runs on PC (Windows/Linux) and Android.
+MacOS support is broken regardless of CPU architecture.
 
 ### Warning: Alpha Status
 The game is currently in an **alpha** status! Therefore bugs, frequent changes making saved games invalid and server abortions need to be expected. Nevertheless we will try to minimize trouble.
@@ -13,7 +14,7 @@ The JSettlers game creates log files of your games that are essential for debugg
 Therefore, always include the following information in a bug report:
 1. What OS and JRE are you using? If it is Android, please state your Android version.
 2. Revision of your build:
-  1. In the PC/Mac version this can be found in the head of the window as "JSettlers - commit: XXXXXXX".
+  1. In the PC version this can be found in the head of the window as "JSettlers - commit: XXXXXXX".
   2. In the Android version, the info is displayed on the start screen in the lower right corner as "build: XXXXXXX".
 3. In the game's folder, there is a subfolder ```resources/logs/``` containing a folder of log files for every game you played. Please package the folder belonging to your game where you experienced the bug (identifiable by date and map name). This folder contains the following files:
   1. *_out.log: This is the console / debugging output of the game.
@@ -35,7 +36,7 @@ Java is preinstalled on Android.
 
 After that, follow the detailed installation instructions for you platform.
 
-### Windows, Linux, Mac OS
+### Windows and Linux
 1. Install "The Settlers III" or a demo version ([Settlers III Amazons Demo](http://www.siedler-maps.de/downloads.php?action=download&downloadid=41)) of it. Don't worry, if it is not running on your OS, we only need the graphics and sound files. In order to get them, you can also unzip the Amazons Demo exe file (yes: unzip the .exe) and copy the folders `Gfx`, `Snd` and `Map` (optional) into an empty folder on your computer.
 2. Download the newest stable [release of JSettlers*.zip](https://github.com/paulwedeck/settlers-remake/releases) (this also includes the MapEditor).
 3. Unpack the downloaded archive to wherever you want JSettlers' installation to be.
