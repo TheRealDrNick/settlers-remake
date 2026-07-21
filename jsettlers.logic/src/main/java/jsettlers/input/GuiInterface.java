@@ -100,7 +100,9 @@ import jsettlers.logic.buildings.IDockBuilding;
 import jsettlers.logic.buildings.military.occupying.OccupyingBuilding;
 import jsettlers.logic.buildings.workers.DockyardBuilding;
 import jsettlers.logic.constants.MatchConstants;
+import jsettlers.logic.movable.MovableManager;
 import jsettlers.logic.movable.interfaces.IDebugable;
+import jsettlers.logic.movable.interfaces.ILogicMovable;
 import jsettlers.logic.player.Player;
 import jsettlers.network.client.interfaces.IGameClock;
 import jsettlers.network.client.interfaces.ITaskScheduler;
@@ -767,7 +769,30 @@ public class GuiInterface implements IMapInterfaceListener, ITaskExecutorGuiInte
 
 	@Override
 	public void renewSelection() {
-		updateSelection(SelectionSet::createFromFilteredSelectionSetUpdatingType);
+		if (currentSelection.isEmpty()) {
+			return;
+		}
+
+		// A conversion (bearer <-> pioneer / geologist / thief) does not change the selected movable in
+		// place: it creates a new movable of the target type at the same position, reusing the original
+		// movable's ID, while the original object is killed (and thereby deselected). Since the selection
+		// still references those now-dead original objects, they would be filtered out and the just
+		// converted units would be dropped from the selection. Resolve every selected movable to the
+		// currently live movable with the same ID so the converted units (and any unchanged ones) stay
+		// selected.
+		final List<ISelectable> newSelection = new LinkedList<>();
+		for (final ISelectable selected : currentSelection) {
+			if (selected instanceof IIDable) {
+				final ILogicMovable liveMovable = MovableManager.getMovableByID(((IIDable) selected).getID());
+				if (liveMovable != null && liveMovable.isAlive() && canSelectPlayer(liveMovable.getPlayer())) {
+					newSelection.add(liveMovable);
+				}
+			} else if (selected.isSelected() && canSelectPlayer(selected.getPlayer())) {
+				newSelection.add(selected);
+			}
+		}
+
+		setSelection(new SelectionSet(newSelection));
 	}
 
 	private void updateSelection(BiFunction<SelectionSet, Predicate<ISelectable>, SelectionSet> updateFunction) {
