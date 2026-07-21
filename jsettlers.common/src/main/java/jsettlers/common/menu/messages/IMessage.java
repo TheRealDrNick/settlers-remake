@@ -32,8 +32,19 @@ public interface IMessage {
 	long MESSAGE_TTL = 90000;
 	/**
 	 * Map grid distance beyond which two messages should be considered sufficiently different to be prompted separately.
+	 * <p>
+	 * Raised to reduce "under attack" notification-sound spam: repeated attacks within a wider area are now treated as
+	 * the same event and do not replay the sound.
 	 */
-	int MESSAGE_DIST_THRESHOLD = 24;
+	int MESSAGE_DIST_THRESHOLD = 48;
+	/**
+	 * Time window (in milliseconds) within which a repeated ATTACKED / MINERALS message in the same area is treated as a
+	 * duplicate, so its notification sound is not replayed.
+	 * <p>
+	 * Widened (from the former {@code MESSAGE_TTL / 6}) to stop the "under attack" sound from spamming repeatedly during
+	 * a prolonged battle.
+	 */
+	long MESSAGE_RETRIGGER_INTERVAL = MESSAGE_TTL / 2;
 
 	/**
 	 * Gets the type of this message.

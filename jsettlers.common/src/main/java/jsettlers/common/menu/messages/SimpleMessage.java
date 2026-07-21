@@ -87,7 +87,7 @@ public class SimpleMessage implements IMessage {
 				&& m.getMessageLabel().equals(this.messageLabel)
 				&& m.getType() == this.type) {
 			if ((this.type == EMessageType.ATTACKED) || (this.type == EMessageType.MINERALS)) {
-				if (m.getAge() < MESSAGE_TTL / 6) {
+				if (m.getAge() < MESSAGE_RETRIGGER_INTERVAL) {
 					return this.pos.getOnGridDistTo(m.getPosition()) < MESSAGE_DIST_THRESHOLD;
 				}
 			} else {

@@ -60,6 +60,7 @@ public class SettingsManager implements ISoundSettingsProvider {
 	private static final String SETTING_GRAPHICS_DEBUG = "debug-opengl";
 	private static final String SETTINGS_GUI_SCALE = "gui-scale";
 	private static final String SETTING_CONTROL_ALL = "control-all";
+	private static final String SETTING_INVERT_MOUSE_DRAG = "invert-mouse-drag";
 	private static final String SETTING_ACTIVATE_ALL_PLAYERS = "activate-all-players";
 	private static final String SETTING_ENABLE_CONSOLE_LOGGING = "console-output";
 	private static final String SETTING_DISABLE_ORIGINAL_MAPS = "disable-original-maps";
@@ -284,6 +285,10 @@ public class SettingsManager implements ISoundSettingsProvider {
 
 	public boolean isControllAll() {
 		return getOptional(SETTING_CONTROL_ALL);
+	}
+
+	public boolean isInvertMouseDrag() {
+		return getOptional(SETTING_INVERT_MOUSE_DRAG);
 	}
 
 	public boolean isActivateAllPlayers() {
