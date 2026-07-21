@@ -20,6 +20,7 @@ import jsettlers.ai.economy.BuildingListEconomyMinister;
 import jsettlers.ai.economy.EconomyMinister;
 import jsettlers.common.ai.EPlayerType;
 import jsettlers.common.player.ECivilisation;
+import jsettlers.logic.constants.MatchConstants;
 import jsettlers.logic.map.grid.MainGrid;
 import jsettlers.logic.map.grid.movable.MovableGrid;
 import jsettlers.logic.player.Player;
@@ -31,7 +32,10 @@ import jsettlers.network.client.interfaces.ITaskScheduler;
 class WhatToDoAiFactory {
 
 	IWhatToDoAi buildWhatToDoAi(EPlayerType type, ECivilisation civilisation, AiStatistics aiStatistics, Player player, MainGrid mainGrid, MovableGrid movableGrid, ITaskScheduler taskScheduler) {
-		ArmyGeneral general = determineArmyGeneral(type, civilisation, aiStatistics, player, movableGrid, taskScheduler);
+		// pick a behavioural play style per AI, seeded from the game RNG so it varies between games yet stays deterministic for
+		// multiplayer/replays. It only flavours combat/naval behaviour, not the difficulty-defining economy factors.
+		EAiPlayStyle playStyle = EAiPlayStyle.pickRandom(MatchConstants.aiRandom());
+		ArmyGeneral general = determineArmyGeneral(type, civilisation, aiStatistics, player, movableGrid, taskScheduler, playStyle);
 		EconomyMinister minister = determineMinister(type, civilisation, aiStatistics, player);
 		return new WhatToDoAi(player, aiStatistics, minister, general, mainGrid, taskScheduler);
 	}
@@ -49,8 +53,8 @@ class WhatToDoAiFactory {
 		}
 	}
 
-	private ArmyGeneral determineArmyGeneral(EPlayerType playerType, ECivilisation civilisation, AiStatistics aiStatistics, Player player, MovableGrid movableGrid, ITaskScheduler taskScheduler) {
+	private ArmyGeneral determineArmyGeneral(EPlayerType playerType, ECivilisation civilisation, AiStatistics aiStatistics, Player player, MovableGrid movableGrid, ITaskScheduler taskScheduler, EAiPlayStyle playStyle) {
 		// TODO: use civilisation to determine different general when there is more than ROMAN
-		return ModularGeneral.createDefaultGeneral(aiStatistics, player, movableGrid, taskScheduler);
+		return ModularGeneral.createDefaultGeneral(aiStatistics, player, movableGrid, taskScheduler, playStyle);
 	}
 }
