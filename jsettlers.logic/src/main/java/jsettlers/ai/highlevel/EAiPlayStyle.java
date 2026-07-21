@@ -28,14 +28,14 @@ import jsettlers.logic.constants.ExtendedRandom;
  * @author jsettlers naval/behaviour AI
  */
 public enum EAiPlayStyle {
-	/** Cautious: attacks only with a clear advantage and keeps a large home garrison; rarely ventures overseas. */
-	TURTLE(0.8f, 1.4f),
+	/** Cautious: attacks only with a clear advantage and keeps a large home garrison; rarely ventures overseas; waits longest before attacking. */
+	TURTLE(0.8f, 1.4f, 1.5f),
 	/** The neutral baseline - behaves like the difficulty defaults. */
-	BALANCED(1.0f, 1.0f),
-	/** Presses attacks readily and keeps only a small garrison at home. */
-	AGGRESSOR(1.25f, 0.85f),
-	/** Loves shipping troops around: eager to commit overseas invasions and flanks with a smaller surplus. */
-	RAIDER(1.1f, 0.7f);
+	BALANCED(1.0f, 1.0f, 1.0f),
+	/** Presses attacks readily, keeps only a small garrison at home, and starts attacking sooner. */
+	AGGRESSOR(1.25f, 0.85f, 0.4f),
+	/** Loves shipping troops around: eager to commit overseas invasions and flanks with a smaller surplus; attacks fairly early. */
+	RAIDER(1.1f, 0.7f, 0.6f);
 
 	public static final EAiPlayStyle[] VALUES = values();
 
@@ -43,10 +43,13 @@ public enum EAiPlayStyle {
 	public final float aggressionFactor;
 	/** Multiplies the naval invasion caution: &gt;1 needs a bigger surplus/garrison before shipping troops, &lt;1 commits more eagerly. */
 	public final float navalCautionFactor;
+	/** Multiplies the opening no-attack grace period: &gt;1 waits longer before the first offensive, &lt;1 attacks sooner. */
+	public final float attackGraceFactor;
 
-	EAiPlayStyle(float aggressionFactor, float navalCautionFactor) {
+	EAiPlayStyle(float aggressionFactor, float navalCautionFactor, float attackGraceFactor) {
 		this.aggressionFactor = aggressionFactor;
 		this.navalCautionFactor = navalCautionFactor;
+		this.attackGraceFactor = attackGraceFactor;
 	}
 
 	/**
