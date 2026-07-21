@@ -11,13 +11,18 @@ import jsettlers.logic.buildings.Building;
 import jsettlers.logic.constants.MatchConstants;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
-import java.util.Vector;
 
 public abstract class SimpleStrategy extends ArmyModule {
 
 	private static final byte MIN_ATTACKER_COUNT = 20;
+	// how many defenders to commit per intruding enemy soldier; defenders get a home-ground combat bonus, so a modest margin suffices and
+	// the rest of the army stays free to keep attacking instead of the whole army yo-yoing home for every small raid
+	private static final int DEFENDERS_PER_INTRUDER = 2;
 	private final float attackerCountFactor;
 
 	// how readily each difficulty presses an attack: a HIGHER factor means it attacks with a smaller (or no) numeric advantage.
@@ -62,11 +67,59 @@ public abstract class SimpleStrategy extends ArmyModule {
 	}
 
 	protected void defend(SoldierPositions soldierPositions, Set<Integer> soldiersWithOrders) {
-		List<ShortPoint2D> allMyTroops = new Vector<>();
+		List<ShortPoint2D> threats = new ArrayList<>();
+		for (ShortPoint2D threat : parent.getEnemiesInTown()) {
+			threats.add(threat);
+		}
+		if (threats.isEmpty()) {
+			return;
+		}
+
+		List<ShortPoint2D> allMyTroops = new ArrayList<>();
 		allMyTroops.addAll(soldierPositions.bowmenPositions);
 		allMyTroops.addAll(soldierPositions.pikemenPositions);
 		allMyTroops.addAll(soldierPositions.swordsmenPositions);
-		parent.sendTroopsTo(allMyTroops, parent.getEnemiesInTown().iterator().next(), soldiersWithOrders, EMoveToType.DEFAULT);
+		if (allMyTroops.isEmpty()) {
+			return;
+		}
+
+		// Commit only a proportionate defensive force - enough to overwhelm the intrusion with a margin (defenders fight with a home-ground
+		// bonus) - rather than the whole army. Otherwise a small raid pulls the entire army home and stalls our own offensive, which makes
+		// the AI feel passive and drags games into mutual-defence stalemates. The closest troops to the breach respond; the rest stay free
+		// for the attack strategy and regrouping. A large invasion naturally pulls in proportionally more (or all) of the army.
+		int desiredDefenders = Math.min(allMyTroops.size(), threats.size() * DEFENDERS_PER_INTRUDER);
+		allMyTroops.sort(Comparator.comparingInt(troop -> nearestThreatDistance(troop, threats)));
+		List<ShortPoint2D> defenders = allMyTroops.subList(0, desiredDefenders);
+
+		// send each chosen defender to the nearest intrusion, so the defence spreads across every breached area
+		Map<ShortPoint2D, List<ShortPoint2D>> troopsByThreat = new HashMap<>();
+		for (ShortPoint2D troop : defenders) {
+			troopsByThreat.computeIfAbsent(nearestThreat(troop, threats), key -> new ArrayList<>()).add(troop);
+		}
+		for (Map.Entry<ShortPoint2D, List<ShortPoint2D>> entry : troopsByThreat.entrySet()) {
+			parent.sendTroopsTo(entry.getValue(), entry.getKey(), soldiersWithOrders, EMoveToType.DEFAULT);
+		}
+	}
+
+	private ShortPoint2D nearestThreat(ShortPoint2D troop, List<ShortPoint2D> threats) {
+		ShortPoint2D nearest = null;
+		int bestDistance = Integer.MAX_VALUE;
+		for (ShortPoint2D threat : threats) {
+			int distance = troop.getOnGridDistTo(threat);
+			if (distance < bestDistance) {
+				bestDistance = distance;
+				nearest = threat;
+			}
+		}
+		return nearest;
+	}
+
+	private int nearestThreatDistance(ShortPoint2D troop, List<ShortPoint2D> threats) {
+		int bestDistance = Integer.MAX_VALUE;
+		for (ShortPoint2D threat : threats) {
+			bestDistance = Math.min(bestDistance, troop.getOnGridDistTo(threat));
+		}
+		return bestDistance;
 	}
 
 	protected void attack(SoldierPositions soldierPositions, boolean infantryWouldDie, Set<Integer> soldiersWithOrders) {
