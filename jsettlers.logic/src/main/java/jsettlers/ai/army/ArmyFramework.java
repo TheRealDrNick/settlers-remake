@@ -4,6 +4,7 @@ import jsettlers.ai.highlevel.AiPositions;
 import jsettlers.ai.highlevel.AiStatistics;
 import jsettlers.common.action.EMoveToType;
 import jsettlers.common.action.SetMaterialProductionAction;
+import jsettlers.common.buildings.EBuildingType;
 import jsettlers.common.material.EMaterialType;
 import jsettlers.common.movable.EMovableType;
 import jsettlers.common.movable.ESoldierType;
@@ -12,6 +13,7 @@ import jsettlers.common.position.ShortPoint2D;
 import jsettlers.input.tasks.MoveToGuiTask;
 import jsettlers.input.tasks.SetMaterialProductionGuiTask;
 import jsettlers.input.tasks.UpgradeSoldiersGuiTask;
+import jsettlers.logic.buildings.Building;
 import jsettlers.logic.map.grid.movable.MovableGrid;
 import jsettlers.logic.movable.interfaces.ILogicMovable;
 import jsettlers.logic.player.Player;
@@ -93,10 +95,22 @@ public class ArmyFramework {
 
 
 	IPlayer getWeakestEnemy() {
+		return getWeakestEnemy(false);
+	}
+
+	/**
+	 * @param landReachableOnly
+	 *            if true, only enemies that own at least one finished military building reachable by land from our base are
+	 *            considered. Enemies that can only be reached across water are ignored (they are handled by the naval invasion logic).
+	 */
+	IPlayer getWeakestEnemy(boolean landReachableOnly) {
 		IPlayer weakestEnemyPlayer = null;
 		int minAmountOfEnemyId = Integer.MAX_VALUE;
 
 		for (IPlayer enemyPlayer : aiStatistics.getAliveEnemiesOf(player)) {
+			if (landReachableOnly && !hasLandReachableMilitaryBuilding(enemyPlayer)) {
+				continue;
+			}
 			int amountOfEnemyTroops = aiStatistics.getCountOfMovablesOfPlayer(enemyPlayer, EMovableType.SOLDIERS);
 			if (amountOfEnemyTroops < minAmountOfEnemyId) {
 				minAmountOfEnemyId = amountOfEnemyTroops;
@@ -105,6 +119,28 @@ public class ArmyFramework {
 		}
 
 		return weakestEnemyPlayer;
+	}
+
+	/**
+	 * @return true if the target position is on the same connected landmass as our base, i.e. reachable by walking soldiers.
+	 *         Returns false when the target is separated by water (or otherwise unreachable), in which case a land attack order
+	 *         would be silently dropped by the pathfinder.
+	 */
+	boolean isReachableByLand(ShortPoint2D target) {
+		return aiStatistics.hasPlayersBlockedPartition(getPlayerId(), target.x, target.y);
+	}
+
+	/**
+	 * @return true if the given enemy owns at least one finished military building whose door is reachable by land from our base.
+	 */
+	boolean hasLandReachableMilitaryBuilding(IPlayer enemy) {
+		for (ShortPoint2D position : aiStatistics.getBuildingPositionsOfTypesForPlayer(EBuildingType.MILITARY_BUILDINGS, enemy.getPlayerId())) {
+			Building building = aiStatistics.getBuildingAt(position);
+			if (building != null && building.isConstructionFinished() && isReachableByLand(building.getDoor())) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	boolean canUpgradeSoldiers(ESoldierType type) {

@@ -15,8 +15,12 @@ public class SimpleAttackStrategy extends SimpleStrategy {
 	@Override
 	public void applyHeavyRules(Set<Integer> soldiersWithOrders) {
 		if (parent.existsAliveEnemy()) {
+			// only consider enemies reachable by land; across-water enemies are handled by the naval invasion logic
+			IPlayer weakestEnemy = parent.getWeakestEnemy(true);
+			if (weakestEnemy == null) {
+				return;
+			}
 			SoldierPositions soldierPositions = new SoldierPositions(parent.getPlayerId(), soldiersWithOrders);
-			IPlayer weakestEnemy = parent.getWeakestEnemy();
 			SoldierPositions enemySoldierPositions = new SoldierPositions(weakestEnemy.getPlayerId(), Set.of());
 			boolean infantryWouldDie = wouldInfantryDie(enemySoldierPositions);
 			int woundedSoldiersCount = parent.findModules(HealSoldiersModule.class).findAny().map(HealSoldiersModule::getWoundedSoldiersCount).orElse(0);

@@ -22,6 +22,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -35,6 +36,7 @@ import jsettlers.ai.highlevel.pioneers.target.SurroundedByResourcesFilter;
 import jsettlers.common.CommonConstants;
 import jsettlers.common.buildings.EBuildingType;
 import jsettlers.common.landscape.EResourceType;
+import jsettlers.common.map.shapes.HexGridArea;
 import jsettlers.common.material.EMaterialType;
 import jsettlers.common.movable.EMovableType;
 import jsettlers.common.player.ECivilisation;
@@ -46,10 +48,14 @@ import jsettlers.input.tasks.ConvertGuiTask;
 import jsettlers.input.tasks.SimpleBuildingGuiTask;
 import jsettlers.input.tasks.EGuiAction;
 import jsettlers.input.tasks.MoveToGuiTask;
+import jsettlers.input.tasks.SetDockGuiTask;
 import jsettlers.input.tasks.WorkAreaGuiTask;
 import jsettlers.logic.buildings.Building;
+import jsettlers.logic.buildings.IDockBuilding;
+import jsettlers.logic.buildings.workers.DockyardBuilding;
 import jsettlers.logic.constants.MatchConstants;
 import jsettlers.logic.map.grid.MainGrid;
+import jsettlers.logic.map.grid.landscape.LandscapeGrid;
 import jsettlers.logic.map.grid.movable.MovableGrid;
 import jsettlers.logic.movable.interfaces.ILogicMovable;
 import jsettlers.network.client.interfaces.ITaskScheduler;
@@ -147,6 +153,7 @@ class WhatToDoAi implements IWhatToDoAi {
 			destroyBuildings();
 			commandPioneers();
 			buildBuildings();
+			assignDocks();
 			Set<Integer> soldiersWithOrders = new HashSet<>();
 			armyGeneral.applyHeavyRules(soldiersWithOrders);
 			sendGeologists();
@@ -306,6 +313,40 @@ class WhatToDoAi implements IWhatToDoAi {
 				return;
 			buildEconomy();
 		}
+	}
+
+	/**
+	 * Assigns a dock to every finished, occupied dockyard that does not have one yet. A dock is required before the dockyard can build
+	 * ships. The dock is placed on the nearest reachable water tile for which the dockyard reports a valid dock position.
+	 */
+	private void assignDocks() {
+		for (ShortPoint2D dockyardPosition : aiStatistics.getBuildingPositionsOfTypeForPlayer(DOCKYARD, playerId)) {
+			Building building = aiStatistics.getBuildingAt(dockyardPosition);
+			if (!(building instanceof DockyardBuilding) || !building.isConstructionFinished() || !building.isOccupied()) {
+				continue;
+			}
+			DockyardBuilding dockyard = (DockyardBuilding) building;
+			if (dockyard.getDock() != null) {
+				continue; // already has a dock
+			}
+			ShortPoint2D dockWaterPosition = findDockWaterPosition(dockyard, dockyardPosition);
+			if (dockWaterPosition != null) {
+				taskScheduler.scheduleTask(new SetDockGuiTask(playerId, dockyard, dockWaterPosition));
+			}
+		}
+	}
+
+	private ShortPoint2D findDockWaterPosition(IDockBuilding dockyard, ShortPoint2D dockyardPosition) {
+		LandscapeGrid landscapeGrid = mainGrid.getLandscapeGrid();
+		short width = mainGrid.getWidth();
+		short height = mainGrid.getHeight();
+		// scan water tiles outwards from the dockyard; the building itself validates whether a proper land-to-water dock fits there
+		Optional<ShortPoint2D> dockWater = HexGridArea.stream(dockyardPosition.x, dockyardPosition.y, 1, IDockBuilding.MAXIMUM_DOCKYARD_DISTANCE)
+				.filterBounds(width, height)
+				.filter((x, y) -> landscapeGrid.getLandscapeTypeAt(x, y).isWater)
+				.filter((x, y) -> dockyard.canDockBePlaced(new ShortPoint2D(x, y)))
+				.getFirst();
+		return dockWater.orElse(null);
 	}
 
 	private boolean buildTower() {

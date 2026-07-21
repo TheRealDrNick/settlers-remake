@@ -144,6 +144,9 @@ public abstract class ConstructionPositionFinder {
 				};
 			case MEAD_BREWERY:
 				return new NearRequiredBuildingConstructionPositionFinder(this, type, BEEKEEPING);
+			case DOCKYARD:
+			case HARBOR:
+				return new DockyardConstructionPositionFinder(this, type);
 			default:
 				return new NearDiggersConstructionPositionFinder(this, type);
 			}

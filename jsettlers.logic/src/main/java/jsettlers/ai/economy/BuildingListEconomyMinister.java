@@ -93,6 +93,18 @@ public class BuildingListEconomyMinister implements EconomyMinister {
 			addFoodAndBuildingMaterialAndWeaponAndGoldIndustry();
 			addSecondToolSmith();
 		}
+		addNavalBuildings();
+	}
+
+	private void addNavalBuildings() {
+		// Only build a dockyard when there is an enemy we cannot reach by land - it is only needed to ferry troops across water.
+		// This is added directly (not via addIfPossible / the map building counts) so that it does NOT enter the map space
+		// calculation in AiMapInformation: reserving space for a dockyard on every watery map would otherwise reduce the number of
+		// weapon smiths and weaken the AI even on maps where no dockyard is ever needed. The dockyard construction position finder
+		// only actually places it when a coast is available, so a single queued entry is safe.
+		if (aiStatistics.hasEnemyAcrossWaterOf(player) && currentCountOf(DOCKYARD) < 1) {
+			buildingsToBuild.add(DOCKYARD);
+		}
 	}
 
 	private void addHospitals() {

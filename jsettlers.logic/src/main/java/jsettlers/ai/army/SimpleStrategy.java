@@ -6,6 +6,7 @@ import jsettlers.common.buildings.EBuildingType;
 import jsettlers.common.movable.EMovableType;
 import jsettlers.common.player.IPlayer;
 import jsettlers.common.position.ShortPoint2D;
+import jsettlers.logic.buildings.Building;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -60,7 +61,8 @@ public abstract class SimpleStrategy extends ArmyModule {
 	}
 
 	protected void attack(SoldierPositions soldierPositions, boolean infantryWouldDie, Set<Integer> soldiersWithOrders) {
-		IPlayer weakestEnemy = parent.getWeakestEnemy();
+		IPlayer weakestEnemy = parent.getWeakestEnemy(true);
+		if (weakestEnemy == null) return;
 		ShortPoint2D targetDoor = getTargetEnemyDoorToAttack(weakestEnemy);
 		if(targetDoor == null) return;
 
@@ -79,8 +81,12 @@ public abstract class SimpleStrategy extends ArmyModule {
 		List<ShortPoint2D> myMilitaryBuildings = parent.aiStatistics.getBuildingPositionsOfTypesForPlayer(EBuildingType.MILITARY_BUILDINGS, parent.getPlayerId());
 		ShortPoint2D myBaseAveragePoint = AiStatistics.calculateAveragePointFromList(myMilitaryBuildings);
 		List<ShortPoint2D> enemyMilitaryBuildings = parent.aiStatistics.getBuildingPositionsOfTypesForPlayer(EBuildingType.MILITARY_BUILDINGS, enemyToAttack.getPlayerId());
-		// ignore unfinished buildings
-		enemyMilitaryBuildings.removeIf(shortPoint2D -> !parent.aiStatistics.getBuildingAt(shortPoint2D).isConstructionFinished());
+		// ignore unfinished buildings and buildings we cannot reach by land (e.g. on another landmass across water):
+		// sending soldiers there would be silently dropped by the pathfinder. Across-water enemies are handled by the naval invasion logic.
+		enemyMilitaryBuildings.removeIf(shortPoint2D -> {
+			Building building = parent.aiStatistics.getBuildingAt(shortPoint2D);
+			return building == null || !building.isConstructionFinished() || !parent.isReachableByLand(building.getDoor());
+		});
 
 		ShortPoint2D nearestEnemyBuildingPosition = AiStatistics.detectNearestPointFromList(myBaseAveragePoint, enemyMilitaryBuildings);
 		if(nearestEnemyBuildingPosition == null) return null;
