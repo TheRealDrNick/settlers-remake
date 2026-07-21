@@ -61,6 +61,8 @@ import jsettlers.logic.movable.interfaces.ILogicMovable;
 public class NavalInvasionModule extends ArmyModule {
 
 	private static final int FERRY_CAPACITY = 7;
+	// upper bound on how many ferries the AI will build for one invasion, to cap the material/economy investment
+	private static final int MAX_FERRIES = 3;
 	// base number of surplus soldiers (beyond the home garrison) required before an invasion is started - scaled by difficulty below
 	private static final int BASE_MIN_INVASION_FORCE = 7;
 	// base number of soldiers kept at home to defend - scaled by difficulty below
@@ -124,13 +126,15 @@ public class NavalInvasionModule extends ArmyModule {
 		List<IFerryMovable> ferries = findFriendlyFerries();
 		List<ShortPoint2D> idleHomeSoldiers = collectIdleHomeSoldiers(soldiersWithOrders);
 
-		if (ferries.isEmpty()) {
-			// only start an invasion once we have enough surplus troops to make it worthwhile
-			if (idleHomeSoldiers.size() >= homeGarrisonReserve + minInvasionForce) {
+		// build up a small fleet sized to the force we want to ship, so invasions arrive as meaningful waves rather than a trickle of
+		// one or two soldiers. The dockyard builds one ship at a time and ignores extra orders, so we can request every tick.
+		boolean invasionWorthwhile = idleHomeSoldiers.size() >= homeGarrisonReserve + minInvasionForce;
+		if (invasionWorthwhile) {
+			int surplus = idleHomeSoldiers.size() - homeGarrisonReserve;
+			int desiredFerries = Math.min(MAX_FERRIES, Math.max(1, (int) Math.ceil(surplus / (float) FERRY_CAPACITY)));
+			if (ferries.size() < desiredFerries) {
 				parent.taskScheduler.scheduleTask(new OrderShipGuiTask(playerId, dockyard, EShipType.FERRY));
 			}
-			commandExpeditionaryForce(target, landingTile, soldiersWithOrders);
-			return;
 		}
 
 		for (IFerryMovable ferry : ferries) {
@@ -138,19 +142,17 @@ public class NavalInvasionModule extends ArmyModule {
 			// that set, which would cancel the ferry's own move order. Ferries are never commanded by the other army modules anyway.
 			ShortPoint2D ferryPosition = ferry.getPosition();
 			int passengerCount = ferry.getPassengers().size();
+			boolean atHome = ferryPosition.getOnGridDistTo(dockWater) <= FERRY_ARRIVAL_DISTANCE;
+			int remainingSurplus = idleHomeSoldiers.size() - homeGarrisonReserve;
 
-			if (passengerCount == 0) {
-				if (ferryPosition.getOnGridDistTo(dockWater) <= FERRY_ARRIVAL_DISTANCE) {
-					loadSoldiers(ferry, idleHomeSoldiers, soldiersWithOrders);
-				} else {
-					sendFerryTo(ferry, dockWater, soldiersWithOrders); // go home to pick up troops
-				}
+			if (atHome && passengerCount < FERRY_CAPACITY && remainingSurplus > 0) {
+				loadSoldiers(ferry, idleHomeSoldiers, soldiersWithOrders); // keep topping up until full or no surplus troops remain
+			} else if (passengerCount == 0) {
+				sendFerryTo(ferry, dockWater, soldiersWithOrders); // empty and nothing to load here -> return home for troops
+			} else if (ferryPosition.getOnGridDistTo(landingTile) <= FERRY_ARRIVAL_DISTANCE) {
+				parent.taskScheduler.scheduleTask(new MovableGuiTask(EGuiAction.UNLOAD_FERRY, playerId, listOf(ferry.getID())));
 			} else {
-				if (ferryPosition.getOnGridDistTo(landingTile) <= FERRY_ARRIVAL_DISTANCE) {
-					parent.taskScheduler.scheduleTask(new MovableGuiTask(EGuiAction.UNLOAD_FERRY, playerId, listOf(ferry.getID())));
-				} else {
-					sendFerryTo(ferry, landingTile, soldiersWithOrders); // sail the loaded ferry to the enemy shore
-				}
+				sendFerryTo(ferry, landingTile, soldiersWithOrders); // full (or no more troops to wait for) -> sail to the enemy shore
 			}
 		}
 
