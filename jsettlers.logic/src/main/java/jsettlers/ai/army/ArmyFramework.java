@@ -2,6 +2,7 @@ package jsettlers.ai.army;
 
 import jsettlers.ai.highlevel.AiPositions;
 import jsettlers.ai.highlevel.AiStatistics;
+import jsettlers.ai.highlevel.EAiPlayStyle;
 import jsettlers.common.action.EMoveToType;
 import jsettlers.common.action.SetMaterialProductionAction;
 import jsettlers.common.material.EMaterialType;
@@ -29,14 +30,20 @@ public class ArmyFramework {
 	private final Player player;
 	final MovableGrid movableGrid;
 	final ITaskScheduler taskScheduler;
+	private final EAiPlayStyle playStyle;
 
 	protected final List<ArmyModule> modules = new ArrayList<>();
 
-	ArmyFramework(AiStatistics aiStatistics, Player player, MovableGrid movableGrid, ITaskScheduler taskScheduler) {
+	ArmyFramework(AiStatistics aiStatistics, Player player, MovableGrid movableGrid, ITaskScheduler taskScheduler, EAiPlayStyle playStyle) {
 		this.aiStatistics = aiStatistics;
 		this.player = player;
 		this.movableGrid = movableGrid;
 		this.taskScheduler = taskScheduler;
+		this.playStyle = playStyle;
+	}
+
+	public EAiPlayStyle getPlayStyle() {
+		return playStyle;
 	}
 
 	void addModule(ArmyModule module) {

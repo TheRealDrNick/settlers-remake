@@ -27,7 +27,10 @@ public abstract class SimpleStrategy extends ArmyModule {
 	public SimpleStrategy(ArmyFramework parent) {
 		super(parent);
 
-		this.attackerCountFactor = ATTACKER_COUNT_FACTOR_BY_PLAYER_TYPE[parent.getPlayer().getPlayerType().ordinal()];
+		// difficulty sets the base aggressiveness; the per-game play style then flavours it (a "turtle" attacks more cautiously,
+		// an "aggressor" more readily) without changing the difficulty-defining economy.
+		this.attackerCountFactor = ATTACKER_COUNT_FACTOR_BY_PLAYER_TYPE[parent.getPlayer().getPlayerType().ordinal()]
+				* parent.getPlayStyle().aggressionFactor;
 	}
 
 

@@ -99,7 +99,9 @@ public class NavalInvasionModule extends ArmyModule {
 		this.height = mainGrid.getHeight();
 		this.playerId = parent.getPlayerId();
 
-		float caution = INVASION_CAUTION_BY_PLAYER_TYPE[parent.getPlayer().getPlayerType().ordinal()];
+		// difficulty sets the base caution; the per-game play style then flavours it (a "raider" ships troops more eagerly, a "turtle"
+		// keeps a larger garrison at home) without changing the difficulty-defining economy.
+		float caution = INVASION_CAUTION_BY_PLAYER_TYPE[parent.getPlayer().getPlayerType().ordinal()] * parent.getPlayStyle().navalCautionFactor;
 		this.minInvasionForce = Math.round(BASE_MIN_INVASION_FORCE * caution);
 		this.homeGarrisonReserve = Math.round(BASE_HOME_GARRISON_RESERVE * caution);
 	}

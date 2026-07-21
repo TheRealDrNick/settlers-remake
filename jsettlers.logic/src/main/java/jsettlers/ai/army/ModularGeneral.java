@@ -1,6 +1,7 @@
 package jsettlers.ai.army;
 
 import jsettlers.ai.highlevel.AiStatistics;
+import jsettlers.ai.highlevel.EAiPlayStyle;
 import jsettlers.logic.map.grid.movable.MovableGrid;
 import jsettlers.logic.player.Player;
 import jsettlers.network.client.interfaces.ITaskScheduler;
@@ -10,8 +11,8 @@ import java.util.function.Consumer;
 
 public class ModularGeneral extends ArmyFramework implements ArmyGeneral {
 
-	public ModularGeneral(AiStatistics aiStatistics, Player player, MovableGrid movableGrid, ITaskScheduler taskScheduler) {
-		super(aiStatistics, player, movableGrid, taskScheduler);
+	public ModularGeneral(AiStatistics aiStatistics, Player player, MovableGrid movableGrid, ITaskScheduler taskScheduler, EAiPlayStyle playStyle) {
+		super(aiStatistics, player, movableGrid, taskScheduler, playStyle);
 	}
 
 	@Override
@@ -28,8 +29,8 @@ public class ModularGeneral extends ArmyFramework implements ArmyGeneral {
 		}
 	}
 
-	public static ArmyGeneral createDefaultGeneral(AiStatistics aiStatistics, Player player, MovableGrid movableGrid, ITaskScheduler taskScheduler) {
-		return createGeneral(aiStatistics, player, movableGrid, taskScheduler,
+	public static ArmyGeneral createDefaultGeneral(AiStatistics aiStatistics, Player player, MovableGrid movableGrid, ITaskScheduler taskScheduler, EAiPlayStyle playStyle) {
+		return createGeneral(aiStatistics, player, movableGrid, taskScheduler, playStyle,
 			MountTowerModule::new,
 			SoldierProductionModule::new,
 			UpgradeSoldiersModule::new,
@@ -41,8 +42,8 @@ public class ModularGeneral extends ArmyFramework implements ArmyGeneral {
 	}
 
 	@SafeVarargs
-	public static ArmyGeneral createGeneral(AiStatistics aiStatistics, Player player, MovableGrid movableGrid, ITaskScheduler taskScheduler, Consumer<ArmyFramework>... modules) {
-		ModularGeneral general = new ModularGeneral(aiStatistics, player, movableGrid, taskScheduler);
+	public static ArmyGeneral createGeneral(AiStatistics aiStatistics, Player player, MovableGrid movableGrid, ITaskScheduler taskScheduler, EAiPlayStyle playStyle, Consumer<ArmyFramework>... modules) {
+		ModularGeneral general = new ModularGeneral(aiStatistics, player, movableGrid, taskScheduler, playStyle);
 		for (Consumer<ArmyFramework> module : modules) {
 			module.accept(general);
 		}
