@@ -25,7 +25,7 @@ public class SimpleAttackStrategy extends SimpleStrategy {
 			boolean infantryWouldDie = wouldInfantryDie(enemySoldierPositions);
 			int woundedSoldiersCount = parent.findModules(HealSoldiersModule.class).findAny().map(HealSoldiersModule::getWoundedSoldiersCount).orElse(0);
 			if (woundedSoldiersCount/(float)soldierPositions.getSoldiersCount() <= MAX_WOUNDED_RATIO_FOR_ATTACK &&
-					attackIsPossible(soldierPositions, enemySoldierPositions, infantryWouldDie)) {
+					attackIsPossible(soldierPositions, weakestEnemy, enemySoldierPositions, infantryWouldDie)) {
 				attack(soldierPositions, infantryWouldDie, soldiersWithOrders);
 			}
 		}
