@@ -762,6 +762,51 @@ public class AiStatistics {
 		return false;
 	}
 
+	// a land-reachable enemy is a candidate for a sea flank only once we have a real army and still do not clearly outnumber them
+	private static final int MIN_ARMY_FOR_FLANK = 12;
+	private static final float FLANK_LAND_ASSAULT_EDGE = 1.25f;
+
+	/**
+	 * @return true if the enemy owns at least one finished military building whose door is on the same landmass as the given player's base
+	 *         (i.e. the enemy can be attacked by walking soldiers).
+	 */
+	public boolean isEnemyReachableByLand(byte playerId, IPlayer enemy) {
+		if (playerStatistics[playerId].referencePosition == null) {
+			return false;
+		}
+		for (ShortPoint2D position : getBuildingPositionsOfTypesForPlayer(EBuildingType.MILITARY_BUILDINGS, enemy.getPlayerId())) {
+			Building building = getBuildingAt(position);
+			if (building != null && building.isConstructionFinished()
+					&& hasPlayersBlockedPartition(playerId, building.getDoor().x, building.getDoor().y)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * @return true if there is a land-reachable enemy that the player has a real army against but does not clearly outnumber, so bypassing
+	 *         the defended land front by sea (an amphibious flank) may be more effective than a frontal assault. Used to decide whether to
+	 *         build a dockyard on maps where the enemy is technically reachable by land.
+	 */
+	public boolean hasFlankableEnemyOf(IPlayer player) {
+		byte playerId = player.getPlayerId();
+		int ourSoldiers = getCountOfMovablesOfPlayer(player, EMovableType.SOLDIERS);
+		if (ourSoldiers < MIN_ARMY_FOR_FLANK) {
+			return false; // no point preparing a flank before we have an army to spare
+		}
+		for (IPlayer enemy : getAliveEnemiesOf(player)) {
+			if (!isEnemyReachableByLand(playerId, enemy)) {
+				continue;
+			}
+			int enemySoldiers = getCountOfMovablesOfPlayer(enemy, EMovableType.SOLDIERS);
+			if (ourSoldiers < enemySoldiers * FLANK_LAND_ASSAULT_EDGE) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	public static ShortPoint2D calculateAveragePointFromList(List<ShortPoint2D> points) {
 		int averageX = 0;
 		int averageY = 0;
