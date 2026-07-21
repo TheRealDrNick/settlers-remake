@@ -19,6 +19,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
+import jsettlers.common.buildings.stacks.ConstructionStack;
 import jsettlers.common.buildings.stacks.RelativeStack;
 import jsettlers.common.material.EMaterialType;
 import jsettlers.common.player.ECivilisation;
@@ -45,8 +46,16 @@ public final class MaterialsOfBuildings {
 				BuildingVariant building = buildingType.getVariant(civilisation);
 				if(building == null) continue;
 
+				// Buildings that request a material to operate (e.g. dockyard requesting planks).
 				for (RelativeStack requestStack : building.getRequestStacks()) {
-					buildingsForMaterials.get(requestStack.getMaterialType()).add(buildingType);
+					addBuildingForMaterial(buildingsForMaterials, requestStack.getMaterialType(), buildingType);
+				}
+
+				// Construction sites request their build materials (planks / stone). Including them here makes the
+				// material distribution steerable to building sites and ensures that every building type which can
+				// request a material is known to the per-building request queues (see MaterialsForBuildingsRequestPriorityQueue).
+				for (ConstructionStack constructionStack : building.getConstructionStacks()) {
+					addBuildingForMaterial(buildingsForMaterials, constructionStack.getMaterialType(), buildingType);
 				}
 			}
 
@@ -71,6 +80,19 @@ public final class MaterialsOfBuildings {
 	 */
 	public static EBuildingType[] getBuildingTypesRequestingMaterial(EMaterialType material, ECivilisation civilisation) {
 		return buildingsRequestingMaterial.get(civilisation).get(material);
+	}
+
+	/**
+	 * Adds the given {@link EBuildingType} to the list of buildings requesting the given {@link EMaterialType}, avoiding duplicates. A building may
+	 * request the same material from multiple stacks (or via both a request stack and a construction stack); it must only appear once as a
+	 * distribution target.
+	 */
+	private static void addBuildingForMaterial(Map<EMaterialType, List<EBuildingType>> buildingsForMaterials, EMaterialType material,
+			EBuildingType buildingType) {
+		List<EBuildingType> buildings = buildingsForMaterials.get(material);
+		if (!buildings.contains(buildingType)) {
+			buildings.add(buildingType);
+		}
 	}
 
 	private MaterialsOfBuildings() {

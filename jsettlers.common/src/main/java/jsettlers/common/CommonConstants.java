@@ -90,6 +90,13 @@ public abstract class CommonConstants {
 	public static boolean CONTROL_ALL = false;
 
 	/**
+	 * If set to <code>true</code>, the direction of map panning by mouse drag is inverted (dragging moves the map the
+	 * opposite way). This restores the "grab the ground and pull" feel of the original Settlers 3 for returning players.
+	 * Default off to keep the current behaviour unchanged.
+	 */
+	public static boolean INVERT_MOUSE_DRAG = false;
+
+	/**
 	 * If set to <code>true</code>, save games are compressed.
 	 */
 	public static boolean USE_SAVEGAME_COMPRESSION = false;

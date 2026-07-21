@@ -17,6 +17,7 @@ package jsettlers.graphics.map;
 import java.util.Hashtable;
 
 import go.graphics.UIPoint;
+import jsettlers.common.CommonConstants;
 import jsettlers.common.position.FloatRectangle;
 
 /**
@@ -258,8 +259,24 @@ public class ScreenPosition {
 	 *            The distance we panned.
 	 */
 	public synchronized void setPanProgress(Object key, UIPoint distance) {
-		this.panProgresses.put(key, distance);
+		this.panProgresses.put(key, applyDragInversion(distance));
 		recalculateScreen();
+	}
+
+	/**
+	 * Optionally inverts the pan distance so that dragging pans the map in the opposite direction. This is controlled by
+	 * the {@link CommonConstants#INVERT_MOUSE_DRAG} flag (default off) and restores the original Settlers 3 feel for
+	 * users who enable it.
+	 *
+	 * @param distance
+	 *            The raw pan distance.
+	 * @return The possibly inverted pan distance.
+	 */
+	private static UIPoint applyDragInversion(UIPoint distance) {
+		if (CommonConstants.INVERT_MOUSE_DRAG) {
+			return new UIPoint(-distance.getX(), -distance.getY());
+		}
+		return distance;
 	}
 
 	/**
@@ -272,8 +289,9 @@ public class ScreenPosition {
 	 */
 	public synchronized void finishPanProgress(Object key, UIPoint distance) {
 		this.panProgresses.remove(key);
-		setScreenCenter((int) (this.screenCenterX - distance.getX() / zoom),
-				(int) (this.screenCenterY - distance.getY() / zoom));
+		UIPoint effectiveDistance = applyDragInversion(distance);
+		setScreenCenter((int) (this.screenCenterX - effectiveDistance.getX() / zoom),
+				(int) (this.screenCenterY - effectiveDistance.getY() / zoom));
 	}
 
 	public FloatRectangle getPosition() {
