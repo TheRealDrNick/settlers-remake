@@ -4,6 +4,7 @@ import jsettlers.ai.highlevel.AiStatistics;
 import jsettlers.common.action.EMoveToType;
 import jsettlers.common.buildings.EBuildingType;
 import jsettlers.common.movable.EMovableType;
+import jsettlers.common.player.IInGamePlayer;
 import jsettlers.common.player.IPlayer;
 import jsettlers.common.position.ShortPoint2D;
 import jsettlers.logic.buildings.Building;
@@ -39,21 +40,25 @@ public abstract class SimpleStrategy extends ArmyModule {
 	}
 
 
-	protected boolean attackIsPossible(SoldierPositions soldierPositions, SoldierPositions enemySoldierPositions, boolean infantryWouldDie) {
-		// The attack is gated only by having a real standing army (MIN_ATTACKER_COUNT) and a favourable strength ratio below.
+	protected boolean attackIsPossible(SoldierPositions soldierPositions, IPlayer enemy, SoldierPositions enemySoldierPositions, boolean infantryWouldDie) {
+		// The attack is gated only by having a real standing army (MIN_ATTACKER_COUNT) and a favourable combat-power estimate below.
 		// Previously it also required a full weapon-production chain (coal/iron mine, ironmelt, weaponsmith, barrack) to exist; that made
 		// the AI refuse to attack with a large existing army the moment any one of those buildings was missing or destroyed, which is a
 		// major cause of the AI passively sitting on troops it never uses.
 
-		float combatStrength = parent.getPlayer().getCombatStrengthInformation().getCombatStrength(false);
-		float effectiveAttackerCount;
-		if (infantryWouldDie) {
-			effectiveAttackerCount = soldierPositions.bowmenPositions.size() * combatStrength;
-		} else {
-			effectiveAttackerCount = soldierPositions.getSoldiersCount() * combatStrength;
-		}
-		return effectiveAttackerCount >= MIN_ATTACKER_COUNT && effectiveAttackerCount * attackerCountFactor > enemySoldierPositions.getSoldiersCount();
+		// Combat-power estimate: weight BOTH sides by their combat strength (which reflects troop upgrades / manna bonuses), not just our
+		// own. The previous check compared our strength-weighted count against the enemy's raw head count, so it ignored enemy troop
+		// quality and would happily attack a smaller but heavily upgraded enemy army. The attackerCountFactor (difficulty + play style)
+		// is the margin by which we must out-power the enemy before committing.
+		float ourStrength = parent.getPlayer().getCombatStrengthInformation().getCombatStrength(false);
+		// enemies from getAliveEnemiesOf are concrete players; guard the cast and fall back to a neutral strength of 1 just in case
+		float enemyStrength = enemy instanceof IInGamePlayer ? ((IInGamePlayer) enemy).getCombatStrengthInformation().getCombatStrength(false) : 1f;
 
+		float ourAttackerCount = infantryWouldDie ? soldierPositions.bowmenPositions.size() : soldierPositions.getSoldiersCount();
+		float ourPower = ourAttackerCount * ourStrength;
+		float enemyPower = enemySoldierPositions.getSoldiersCount() * enemyStrength;
+
+		return ourPower >= MIN_ATTACKER_COUNT && ourPower * attackerCountFactor > enemyPower;
 	}
 
 	protected void defend(SoldierPositions soldierPositions, Set<Integer> soldiersWithOrders) {
