@@ -362,9 +362,7 @@ public class MapObjectDrawer {
 				if (yShift >= 0) {
 					float xShift = PASSENGER_POSITION_TO_FRONT[j] * xShiftForward + PASSENGER_POSITION_TO_RIGHT[j] * xShiftRight;
 					IGraphicsMovable passenger = passengerList.get(j);
-					Image image = this.imageMap.getImageForSettler(passenger.getPlayer().getCivilisation(), passenger.getMovableType(), EMovableAction.NO_ACTION,
-						EMaterialType.NO_MATERIAL, getPassengerDirection(direction, shipPosition, i), 0
-					);
+					Image image = getPassengerImage(passenger, getPassengerDirection(direction, shipPosition, i));
 					image.drawAt(glDrawContext, viewX + xShift, viewY + yShift + PASSENGER_DECK_HEIGHT, getZ(0, y), color, shade);
 				}
 			}
@@ -395,9 +393,7 @@ public class MapObjectDrawer {
 				if (yShift < 0) {
 					float xShift = PASSENGER_POSITION_TO_FRONT[j] * xShiftForward + PASSENGER_POSITION_TO_RIGHT[j] * xShiftRight;
 					IGraphicsMovable passenger = passengerList.get(j);
-					Image image = this.imageMap.getImageForSettler(passenger.getPlayer().getCivilisation(), passenger.getMovableType(), EMovableAction.NO_ACTION,
-						EMaterialType.NO_MATERIAL, getPassengerDirection(direction, shipPosition, i), 0
-					);
+					Image image = getPassengerImage(passenger, getPassengerDirection(direction, shipPosition, i));
 					image.drawAt(glDrawContext, viewX + xShift, viewY + yShift + PASSENGER_DECK_HEIGHT, getZ(0, y), color, shade);
 				}
 			}
@@ -430,6 +426,20 @@ public class MapObjectDrawer {
 		int y = shipPosition.y;
 		int slowerAnimationStep = animationStep / 32;
 		return shipDirection.getNeighbor(((x + seatIndex + slowerAnimationStep) / 8 + (y + seatIndex + slowerAnimationStep) / 11 + seatIndex) % 3 - 1);
+	}
+
+	/**
+	 * Selects the image used to draw a ferry passenger.
+	 * <p>
+	 * Passengers are drawn using their {@link EMovableAction#WALKING} animation instead of the idle {@link EMovableAction#NO_ACTION}
+	 * frame: level-1 soldiers, pioneers and geologists have no populated idle standing frame in the settler graphics (they are never
+	 * shown standing still on land), so requesting NO_ACTION resolved to a blank image and they appeared invisible on ferries (bug #64).
+	 * The WALKING frames exist for every carried unit type, so all passengers - including the previously working upgraded soldiers -
+	 * render correctly.
+	 */
+	private Image getPassengerImage(IGraphicsMovable passenger, EDirection direction) {
+		return imageMap.getImageForSettler(passenger.getPlayer().getCivilisation(), passenger.getMovableType(), EMovableAction.WALKING,
+			EMaterialType.NO_MATERIAL, direction, 0);
 	}
 
 	private void drawShipLink(IGraphicsMovable ship, EMaterialType fakeMat, GLDrawContext gl, float viewX, float viewY, float y, Color color, float shade) {
@@ -635,7 +645,13 @@ public class MapObjectDrawer {
 	}
 
 	private void drawConstructionMark(int x, int y, IMapObject object, float color) {
-		drawByProgress(x, y, CONSTRUCTION_MARK_Z, 4, 6, object.getStateProgress(), color);
+		// Draw the construction mark without its shadow. Construction marks are only shown while placing a
+		// building (build-mode preview); rendering their shadows produced a stray shadow under the placement
+		// preview that the original game does not have (see bug #21). drawOnlyImage uses the no-shadow draw
+		// mode; real, placed buildings are drawn elsewhere and keep their shadows.
+		Sequence<? extends Image> sequence = this.imageProvider.getSettlerSequence(4, 6);
+		int index = Math.min((int) (object.getStateProgress() * sequence.length()), sequence.length() - 1);
+		drawOnlyImage(sequence.getImageSafe(index, null), x, y, CONSTRUCTION_MARK_Z, null, color);
 	}
 
 	private void drawRoofFlag(int x, int y, IMapObject object, float color) {
