@@ -72,6 +72,23 @@ All the options above can also be specified as command line options. For this, y
 3. Download the newest stable JSettlers-Android_v*.apk onto your Android device.
 4. Install JSettlers by running the downloaded file.
 
+## Computer Opponents (AI)
+
+This fork focuses on making the computer players smarter and more fun to play against. If you played the original game, you may remember that the enemies often just sat still, rarely attacked even with a big army, and never crossed water. That has been improved:
+
+- **They actually attack.** An enemy with a strong enough army will now go on the offensive instead of sitting in its base forever. It also stops waiting when it clearly has the upper hand.
+- **They pick smarter targets.** Enemies go after weak spots first – especially undefended (empty) towers, which are easy to capture – instead of always charging the nearest building. They also vary their target from game to game, so they are harder to predict.
+- **They judge a fight before committing.** Before attacking, an enemy compares its army's real strength against yours (taking troop upgrades into account), so it no longer throws a large army at a smaller but much stronger one.
+- **They defend properly.** When you attack an enemy in several places at once, it now sends defenders to each break-in point instead of piling its whole army onto a single spot. It only commits as many troops as the threat needs, so a small raid will not pull its entire army away from the front.
+- **They can fight across water.** On maps with seas or islands, an enemy will build a dockyard, produce ferries, load soldiers, sail them across the water and land them to attack – something the AI could not do before. If your land border is heavily defended, it may even sail *around* it and land troops behind your defenses.
+- **Every enemy has a personality.** At the start of each game every computer player is randomly given a play style – for example a cautious *turtle*, a *balanced* player, an aggressive attacker, or a *raider* that loves shipping troops overseas. This makes each game feel a little different.
+
+### Difficulty levels
+
+There are four difficulty levels, from *very easy* to *very hard*. The difficulty mainly controls how fast and strong the enemy's economy is – a *very hard* enemy builds up a much stronger economy and army than an *easy* one. The personality above is added on top of the difficulty, so a *very hard* enemy is always the strongest, it just fights in its own style.
+
+By default, when a single-player game has several computer players, the first one is the weakest and each following one is a bit harder. You can change this with the `fixed-ai-type` option described under **Configuration Flags** above (for example `--fixed-ai-type=ROMAN_VERY_HARD` to make every computer player very hard).
+
 ## Build instructions and developer's guide
 The [build instructions](https://github.com/paulwedeck/settlers-remake/wiki/Compiling-using-gradle) and the [developer's guide](https://github.com/paulwedeck/settlers-remake/wiki/Developer's%20Guide) can be found in our wiki.
 
