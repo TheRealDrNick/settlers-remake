@@ -62,6 +62,16 @@ import jsettlers.graphics.ui.UIPanel;
 public class OriginalControls implements IControls {
 	private static final int DEFAULT_LAYOUT_SIZE = 480;
 
+	/**
+	 * Upper bound for the control panel width, expressed as a fraction of the window width. The panel keeps the fixed
+	 * aspect ratio of its artwork, so its width is normally derived from the window height alone. On (nearly) square,
+	 * portrait or otherwise unusual maximized windows that lets the panel grow to a large fraction of - or even wider
+	 * than - the window, overlapping the rest of the UI (bug #67). Capping the width to this fraction keeps the panel
+	 * within reasonable bounds regardless of the window aspect ratio. It is chosen large enough not to affect any
+	 * ordinary (4:3, 5:4, 16:10, 16:9, ...) window, so normal behaviour is unchanged.
+	 */
+	private static final float MAX_PANEL_WIDTH_RATIO = 0.4f;
+
 	private final MinimapMode minimapSettings = new MinimapMode();
 	private final MainPanel mainPanel;
 	private final Button chatButton;
@@ -156,12 +166,21 @@ public class OriginalControls implements IControls {
 			uiBase = createInterface();
 			mainPanel.layoutPanel(layoutProperties);
 		}
-		int width = (int) (layoutProperties.ASPECT_RATIO * newHeight);
-		this.uiBase.setPosition(new FloatRectangle(0, 0, width, newHeight));
+		// Derive the panel width from the window height to preserve the artwork's aspect ratio, but never let it
+		// exceed MAX_PANEL_WIDTH_RATIO of the window width. If it would, clamp the width and shrink the panel height
+		// accordingly so the aspect ratio is kept and the panel stays pinned to the bottom-left corner (bug #67).
+		float height = newHeight;
+		int width = (int) (layoutProperties.ASPECT_RATIO * height);
+		int maxWidth = (int) (MAX_PANEL_WIDTH_RATIO * newWidth);
+		if (width > maxWidth) {
+			width = maxWidth;
+			height = width / layoutProperties.ASPECT_RATIO;
+		}
+		this.uiBase.setPosition(new FloatRectangle(0, 0, width, height));
 
 		minimap.setSize(
 				(int) Math.ceil(layoutProperties.miniMap.MAP_WIDTH * width),
-				(int) Math.ceil(layoutProperties.miniMap.MAP_HEIGHT * (1 - layoutProperties.MAIN_PANEL_TOP) * newHeight));
+				(int) Math.ceil(layoutProperties.miniMap.MAP_HEIGHT * (1 - layoutProperties.MAIN_PANEL_TOP) * height));
 	}
 
 	@Override
