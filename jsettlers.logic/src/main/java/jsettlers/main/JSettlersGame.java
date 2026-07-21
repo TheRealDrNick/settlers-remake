@@ -397,7 +397,11 @@ public class JSettlersGame {
 			System.setOut(new PrintStream(logStream));
 			System.setErr(new PrintStream(errStream));
 		} catch (IOException ex) {
-			throw new RuntimeException("Error setting up logging.", ex);
+			// A failure to open the log file must never prevent the game from starting (issue #85).
+			// Fall back to plain console logging and keep the original streams intact.
+			System.setErr(systemErrorStream);
+			System.setOut(systemOutStream);
+			System.err.println("Warning: could not set up file logging, continuing with console logging only: " + ex.getMessage());
 		}
 	}
 
