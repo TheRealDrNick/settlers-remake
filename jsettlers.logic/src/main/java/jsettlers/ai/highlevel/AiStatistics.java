@@ -732,6 +732,36 @@ public class AiStatistics {
 		return getEnemiesOf(player).stream().filter(this::isAlive).collect(Collectors.toList());
 	}
 
+	/**
+	 * @return true if at least one alive enemy owns a finished military building but none of its finished military buildings are reachable
+	 *         by land from our base, i.e. that enemy can only be attacked across water. Used to decide whether the AI needs a dockyard.
+	 */
+	public boolean hasEnemyAcrossWaterOf(IPlayer player) {
+		byte playerId = player.getPlayerId();
+		if (playerStatistics[playerId].referencePosition == null) {
+			return false; // we do not have a base yet, so we cannot judge reachability
+		}
+		for (IPlayer enemy : getAliveEnemiesOf(player)) {
+			boolean hasMilitaryBuilding = false;
+			boolean anyLandReachable = false;
+			for (ShortPoint2D position : getBuildingPositionsOfTypesForPlayer(EBuildingType.MILITARY_BUILDINGS, enemy.getPlayerId())) {
+				Building building = getBuildingAt(position);
+				if (building == null || !building.isConstructionFinished()) {
+					continue;
+				}
+				hasMilitaryBuilding = true;
+				if (hasPlayersBlockedPartition(playerId, building.getDoor().x, building.getDoor().y)) {
+					anyLandReachable = true;
+					break;
+				}
+			}
+			if (hasMilitaryBuilding && !anyLandReachable) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	public static ShortPoint2D calculateAveragePointFromList(List<ShortPoint2D> points) {
 		int averageX = 0;
 		int averageY = 0;

@@ -35,6 +35,7 @@ public class ModularGeneral extends ArmyFramework implements ArmyGeneral {
 			UpgradeSoldiersModule::new,
 			HealSoldiersModule::new,
 			SimpleDefenseStrategy::new,
+			NavalInvasionModule::new,
 			SimpleAttackStrategy::new,
 			RegroupArmyModule::new);
 	}
