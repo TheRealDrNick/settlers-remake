@@ -71,8 +71,14 @@ public class SwingResourceProvider implements IResourceProvider {
 
 	@Override
 	public OutputStream writeUserFile(String name) throws IOException {
-		File file = new File("." + File.separator + name);
-		file.getParentFile().mkdirs();
+		// User files (logs, replays) are written into the app home directory, which is guaranteed to be writable
+		// (see getAppHome()). Resolving against the process working directory instead used to fail whenever the
+		// game was launched from a non-writable working directory, e.g. inside a Flatpak sandbox (issue #85).
+		File file = new File(resourcesDirectory, name);
+		File parentDir = file.getParentFile();
+		if (parentDir != null && !parentDir.isDirectory() && !parentDir.mkdirs()) {
+			throw new IOException("Could not create directory for user file: " + parentDir.getAbsolutePath());
+		}
 		return new FileOutputStream(file);
 	}
 
