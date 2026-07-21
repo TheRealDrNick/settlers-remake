@@ -4,7 +4,6 @@ import jsettlers.ai.highlevel.AiPositions;
 import jsettlers.ai.highlevel.AiStatistics;
 import jsettlers.common.action.EMoveToType;
 import jsettlers.common.action.SetMaterialProductionAction;
-import jsettlers.common.buildings.EBuildingType;
 import jsettlers.common.material.EMaterialType;
 import jsettlers.common.movable.EMovableType;
 import jsettlers.common.movable.ESoldierType;
@@ -13,7 +12,6 @@ import jsettlers.common.position.ShortPoint2D;
 import jsettlers.input.tasks.MoveToGuiTask;
 import jsettlers.input.tasks.SetMaterialProductionGuiTask;
 import jsettlers.input.tasks.UpgradeSoldiersGuiTask;
-import jsettlers.logic.buildings.Building;
 import jsettlers.logic.map.grid.movable.MovableGrid;
 import jsettlers.logic.movable.interfaces.ILogicMovable;
 import jsettlers.logic.player.Player;
@@ -134,13 +132,7 @@ public class ArmyFramework {
 	 * @return true if the given enemy owns at least one finished military building whose door is reachable by land from our base.
 	 */
 	boolean hasLandReachableMilitaryBuilding(IPlayer enemy) {
-		for (ShortPoint2D position : aiStatistics.getBuildingPositionsOfTypesForPlayer(EBuildingType.MILITARY_BUILDINGS, enemy.getPlayerId())) {
-			Building building = aiStatistics.getBuildingAt(position);
-			if (building != null && building.isConstructionFinished() && isReachableByLand(building.getDoor())) {
-				return true;
-			}
-		}
-		return false;
+		return aiStatistics.isEnemyReachableByLand(getPlayerId(), enemy);
 	}
 
 	boolean canUpgradeSoldiers(ESoldierType type) {

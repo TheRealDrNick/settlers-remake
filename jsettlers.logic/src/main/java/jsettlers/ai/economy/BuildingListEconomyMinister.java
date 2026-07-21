@@ -102,7 +102,7 @@ public class BuildingListEconomyMinister implements EconomyMinister {
 		// calculation in AiMapInformation: reserving space for a dockyard on every watery map would otherwise reduce the number of
 		// weapon smiths and weaken the AI even on maps where no dockyard is ever needed. The dockyard construction position finder
 		// only actually places it when a coast is available, so a single queued entry is safe.
-		if (aiStatistics.hasEnemyAcrossWaterOf(player) && currentCountOf(DOCKYARD) < 1) {
+		if ((aiStatistics.hasEnemyAcrossWaterOf(player) || aiStatistics.hasFlankableEnemyOf(player)) && currentCountOf(DOCKYARD) < 1) {
 			buildingsToBuild.add(DOCKYARD);
 		}
 	}

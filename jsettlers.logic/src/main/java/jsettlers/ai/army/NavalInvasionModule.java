@@ -15,6 +15,7 @@
 package jsettlers.ai.army;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -42,7 +43,13 @@ import jsettlers.logic.movable.interfaces.ILogicMovable;
 /**
  * Enables the AI to attack enemies that are separated from it by water. Once the economy has provided a dockyard with a dock (see
  * {@link jsettlers.ai.highlevel.WhatToDoAi#assignDocks()}), this module builds ferries, loads surplus soldiers onto them, sails them to an
- * enemy shore, unloads the troops and orders them to attack.
+ * enemy shore, unloads the troops and orders them to attack. It handles two situations:
+ * <ul>
+ * <li><b>pure invasion</b> - an enemy that cannot be reached by land at all (island enemy).</li>
+ * <li><b>amphibious flanking</b> - an enemy that <i>is</i> reachable by land, but where a frontal land assault looks unfavourable
+ * (we do not clearly outnumber them). Instead of grinding the defended land front, the AI ships a force around it and lands next to the
+ * enemy's least defended (ideally unmanned) military building, bypassing the chokepoint.</li>
+ * </ul>
  * <p>
  * The module is a stateless, world-observing controller: every heavy tick it re-derives the current situation from the game state (which
  * ferries exist, whether they are loaded, where they are, which soldiers have already landed) and issues the next appropriate order. It
@@ -62,6 +69,14 @@ public class NavalInvasionModule extends ArmyModule {
 	private static final int FERRY_ARRIVAL_DISTANCE = 6;
 	// how far around an enemy building to look for a navigable landing water tile
 	private static final int LANDING_SEARCH_RADIUS = 20;
+	// a frontal land assault is considered unfavourable (and flanking preferred) unless we have at least this many times the enemy's soldiers
+	private static final float LAND_ASSAULT_REQUIRED_EDGE = 1.25f;
+	// added to a flank candidate's defense score when its tower is occupied, so unmanned (free to conquer) towers are strongly preferred
+	private static final int OCCUPIED_TOWER_PENALTY = 100;
+	// enemy soldiers within this distance of a building count as defending it (used for flank target selection)
+	private static final int FLANK_DEFENSE_RADIUS = 10;
+	// our soldiers within this distance of the landing tile (and on its landmass) are treated as the landed expeditionary force
+	private static final int EXPEDITION_COMMAND_RADIUS = 15;
 
 	// how eagerly each difficulty invades across water: a higher factor means a bigger required surplus and garrison, i.e. more caution.
 	// indexed by EPlayerType.ordinal(): AI_VERY_EASY, AI_EASY, AI_HARD, AI_VERY_HARD, HUMAN
@@ -99,23 +114,12 @@ public class NavalInvasionModule extends ArmyModule {
 		}
 		ShortPoint2D dockWater = dockyard.getDock().getWaterPosition();
 
-		// pick an enemy that we cannot reach by land but whose shore we can reach by sea
-		IPlayer target = null;
-		ShortPoint2D landingTile = null;
-		for (IPlayer enemy : parent.aiStatistics.getAliveEnemiesOf(parent.getPlayer())) {
-			if (parent.hasLandReachableMilitaryBuilding(enemy)) {
-				continue; // reachable by land, handled by the normal attack strategy
-			}
-			ShortPoint2D candidate = findLandingTile(enemy, dockWater);
-			if (candidate != null) {
-				target = enemy;
-				landingTile = candidate;
-				break;
-			}
-		}
-		if (target == null) {
+		InvasionTarget invasion = selectInvasionTarget(dockWater);
+		if (invasion == null) {
 			return;
 		}
+		IPlayer target = invasion.enemy;
+		ShortPoint2D landingTile = invasion.landingTile;
 
 		List<IFerryMovable> ferries = findFriendlyFerries();
 		List<ShortPoint2D> idleHomeSoldiers = collectIdleHomeSoldiers(soldiersWithOrders);
@@ -125,7 +129,7 @@ public class NavalInvasionModule extends ArmyModule {
 			if (idleHomeSoldiers.size() >= homeGarrisonReserve + minInvasionForce) {
 				parent.taskScheduler.scheduleTask(new OrderShipGuiTask(playerId, dockyard, EShipType.FERRY));
 			}
-			commandLandedSoldiers(target, soldiersWithOrders);
+			commandExpeditionaryForce(target, landingTile, soldiersWithOrders);
 			return;
 		}
 
@@ -150,7 +154,7 @@ public class NavalInvasionModule extends ArmyModule {
 			}
 		}
 
-		commandLandedSoldiers(target, soldiersWithOrders);
+		commandExpeditionaryForce(target, landingTile, soldiersWithOrders);
 	}
 
 	private void loadSoldiers(IFerryMovable ferry, List<ShortPoint2D> idleHomeSoldiers, Set<Integer> soldiersWithOrders) {
@@ -166,15 +170,22 @@ public class NavalInvasionModule extends ArmyModule {
 		parent.sendTroopsTo(batch, ferry.getPosition(), soldiersWithOrders, EMoveToType.DEFAULT);
 	}
 
-	private void commandLandedSoldiers(IPlayer target, Set<Integer> soldiersWithOrders) {
+	/**
+	 * Orders the troops that have been ferried across and unloaded near {@code landingTile} to attack the enemy. The expeditionary force
+	 * is identified by proximity to the landing tile (and being on the same landmass as it), which works both for island invasions - where
+	 * the troops are on a different landmass than our base - and for same-landmass flanking, where a partition test could not tell them
+	 * apart from our home army.
+	 */
+	private void commandExpeditionaryForce(IPlayer target, ShortPoint2D landingTile, Set<Integer> soldiersWithOrders) {
 		List<ShortPoint2D> landed = new ArrayList<>();
 		for (ShortPoint2D position : parent.aiStatistics.getPositionsOfMovablesWithTypesForPlayer(playerId, EMovableType.SOLDIERS)) {
 			ILogicMovable movable = parent.movableGrid.getMovableAt(position.x, position.y);
 			if (movable == null || soldiersWithOrders.contains(movable.getID())) {
 				continue;
 			}
-			if (!parent.isReachableByLand(position)) {
-				landed.add(position); // a soldier not on our landmass has been ferried onto the enemy island
+			if (position.getOnGridDistTo(landingTile) <= EXPEDITION_COMMAND_RADIUS
+					&& landscapeGrid.isReachable(landingTile.x, landingTile.y, position.x, position.y, false)) {
+				landed.add(position); // this soldier has been ferried over and is now ashore near the landing site
 			}
 		}
 		if (landed.isEmpty()) {
@@ -220,13 +231,86 @@ public class NavalInvasionModule extends ArmyModule {
 		if (focus == null) {
 			return null;
 		}
-		// nearest water tile to the enemy building that is navigable from our dock; unloading later drops troops on the adjacent land
-		Optional<ShortPoint2D> landing = HexGridArea.stream(focus.x, focus.y, 1, LANDING_SEARCH_RADIUS)
+		return findNavigableLandingNear(focus, dockWater);
+	}
+
+	/** @return the nearest water tile to {@code target} that is navigable by ship from {@code dockWater}, or null if none is in range. */
+	private ShortPoint2D findNavigableLandingNear(ShortPoint2D target, ShortPoint2D dockWater) {
+		// unloading later drops troops on the land next to this water tile (see FerryMovable.unloadFerry)
+		Optional<ShortPoint2D> landing = HexGridArea.stream(target.x, target.y, 1, LANDING_SEARCH_RADIUS)
 				.filterBounds(width, height)
 				.filter((x, y) -> landscapeGrid.getLandscapeTypeAt(x, y).isWater)
 				.filter((x, y) -> landscapeGrid.isReachable(dockWater.x, dockWater.y, x, y, true))
 				.getFirst();
 		return landing.orElse(null);
+	}
+
+	/**
+	 * Chooses which enemy to attack by sea and where to land, preferring pure island invasions over amphibious flanks.
+	 */
+	private InvasionTarget selectInvasionTarget(ShortPoint2D dockWater) {
+		List<IPlayer> flankingCandidates = new ArrayList<>();
+		for (IPlayer enemy : parent.aiStatistics.getAliveEnemiesOf(parent.getPlayer())) {
+			if (parent.hasLandReachableMilitaryBuilding(enemy)) {
+				flankingCandidates.add(enemy); // reachable by land: only a candidate for flanking
+				continue;
+			}
+			ShortPoint2D landing = findLandingTile(enemy, dockWater);
+			if (landing != null) {
+				return new InvasionTarget(enemy, landing); // island enemy: pure invasion takes priority
+			}
+		}
+		for (IPlayer enemy : flankingCandidates) {
+			if (!landAssaultUnfavorable(enemy)) {
+				continue; // we clearly outnumber them - let the normal land attack strategy walk in
+			}
+			ShortPoint2D landing = findFlankingLandingTile(enemy, dockWater);
+			if (landing != null) {
+				return new InvasionTarget(enemy, landing);
+			}
+		}
+		return null;
+	}
+
+	private boolean landAssaultUnfavorable(IPlayer enemy) {
+		int ourSoldiers = parent.aiStatistics.getCountOfMovablesOfPlayer(parent.getPlayer(), EMovableType.SOLDIERS);
+		int enemySoldiers = parent.aiStatistics.getCountOfMovablesOfPlayer(enemy, EMovableType.SOLDIERS);
+		// unfavourable unless we clearly outnumber the enemy; then bypassing the defended land front by sea is the better option
+		return ourSoldiers < enemySoldiers * LAND_ASSAULT_REQUIRED_EDGE;
+	}
+
+	/**
+	 * For a land-reachable enemy, picks a landing next to its least defended military building - preferring unmanned towers - so the
+	 * expedition lands behind the defended land front and can conquer a lightly held building to gain a foothold.
+	 */
+	private ShortPoint2D findFlankingLandingTile(IPlayer enemy, ShortPoint2D dockWater) {
+		List<ShortPoint2D> militaryBuildings = new ArrayList<>();
+		for (ShortPoint2D position : parent.aiStatistics.getBuildingPositionsOfTypesForPlayer(EBuildingType.MILITARY_BUILDINGS, enemy.getPlayerId())) {
+			Building building = parent.aiStatistics.getBuildingAt(position);
+			if (building != null && building.isConstructionFinished()) {
+				militaryBuildings.add(position);
+			}
+		}
+		List<ShortPoint2D> enemySoldiers = parent.aiStatistics.getPositionsOfMovablesWithTypesForPlayer(enemy.getPlayerId(), EMovableType.SOLDIERS);
+		militaryBuildings.sort(Comparator.comparingInt(pos -> flankDefenseScore(pos, enemySoldiers)));
+		for (ShortPoint2D building : militaryBuildings) {
+			ShortPoint2D landing = findNavigableLandingNear(building, dockWater);
+			if (landing != null) {
+				return landing;
+			}
+		}
+		return null;
+	}
+
+	private int flankDefenseScore(ShortPoint2D buildingPosition, List<ShortPoint2D> enemySoldiers) {
+		Building building = parent.aiStatistics.getBuildingAt(buildingPosition);
+		int score = (building != null && building.isOccupied()) ? OCCUPIED_TOWER_PENALTY : 0;
+		for (ShortPoint2D soldier : enemySoldiers) {
+			if (soldier.getOnGridDistTo(buildingPosition) <= FLANK_DEFENSE_RADIUS) {
+				score++;
+			}
+		}
+		return score;
 	}
 
 	private List<ShortPoint2D> collectIdleHomeSoldiers(Set<Integer> soldiersWithOrders) {
@@ -272,5 +356,16 @@ public class NavalInvasionModule extends ArmyModule {
 		List<Integer> list = new ArrayList<>(1);
 		list.add(id);
 		return list;
+	}
+
+	/** The enemy to attack by sea together with the water tile the ferry should sail to and unload at. */
+	private static final class InvasionTarget {
+		final IPlayer enemy;
+		final ShortPoint2D landingTile;
+
+		InvasionTarget(IPlayer enemy, ShortPoint2D landingTile) {
+			this.enemy = enemy;
+			this.landingTile = landingTile;
+		}
 	}
 }
