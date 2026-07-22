@@ -74,6 +74,7 @@ public class ColonizationIT {
 		assumeTrue("Island map not present, skipping ColonizationIT: " + MAP_FILE, MAP_FILE.exists());
 
 		MapLoader map = MapLoader.getLoaderForListedMap(new DirectoryMapLister.ListedMapFile(MAP_FILE));
+		System.out.println("[ColonizationIT.loader] loaderClass=" + map.getClass().getName() + " maxPlayers=" + map.getMaxPlayers());
 		int maxPlayers = map.getMaxPlayers();
 		byte subjectId = (byte) 0;
 
