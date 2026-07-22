@@ -100,6 +100,21 @@ public class ArmyFramework {
 	}
 
 
+	/**
+	 * Chooses the enemy our offensive should target. This is a refinement of {@link #getWeakestEnemy(boolean)}: when an
+	 * {@link OpponentAdaptationModule} is present it may bias the target toward the opponent that has been pressuring us most
+	 * (retaliation). When no such module is registered - or on any of that module's no-op paths (at most one alive enemy, non-advanced
+	 * difficulty) - this returns exactly {@link #getWeakestEnemy(boolean)}, so existing behaviour is preserved byte-for-byte.
+	 *
+	 * @param landReachableOnly see {@link #getWeakestEnemy(boolean)}.
+	 */
+	IPlayer getPreferredTargetEnemy(boolean landReachableOnly) {
+		return findModules(OpponentAdaptationModule.class)
+				.findFirst()
+				.map(module -> module.selectTargetEnemy(landReachableOnly))
+				.orElseGet(() -> getWeakestEnemy(landReachableOnly));
+	}
+
 	IPlayer getWeakestEnemy() {
 		return getWeakestEnemy(false);
 	}
