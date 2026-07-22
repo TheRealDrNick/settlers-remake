@@ -95,6 +95,14 @@ Difficulty also changes *how cleverly* the enemy fights, not only how fast it gr
 
 By default, when a single-player game has several computer players, the first one is the weakest and each following one is a bit harder. You can change this with the `fixed-ai-type` option described under **Configuration Flags** above (for example `--fixed-ai-type=ROMAN_VERY_HARD` to make every computer player very hard).
 
+## Controls and gameplay tips
+
+- **Recall fighting soldiers.** A plain right-click is a *fighting* move order: soldiers walk there but engage enemies they meet on the way — and soldiers already chasing an enemy will keep chasing instead of obeying. Hold **Ctrl** while right-clicking for a *forced* move order: the soldiers break off combat immediately and go exactly where you pointed.
+- **Patrol.** Hold **Alt** while right-clicking to make the selected soldiers patrol between their current position and the clicked point.
+- **Soldiers heading to a tower ignore orders.** A soldier that is on its way to occupy a tower or castle finishes that job first and does not react to move orders until it has arrived. If you need it elsewhere, release it through the tower's selection panel.
+- **Savegames** are stored in the `save` folder inside the game's resource directory (when running from source that is `jsettlers.main.swing/save`). Load them via *Load Game* in the main menu.
+- **Demo data limitations.** JSettlers needs the graphics of an original Settlers 3 installation. With the old 1999 *demo* version's files the game runs, but many images are missing or shifted: ships and ferries are invisible (you only see the passengers), buildings of the non-Roman peoples do not show up, and the tower panel can show the wrong person (e.g. a healer instead of a soldier). Use the data files of a full Settlers 3 installation (for example the GOG edition) for correct graphics.
+
 ## Build instructions and developer's guide
 The [build instructions](https://github.com/paulwedeck/settlers-remake/wiki/Compiling-using-gradle) and the [developer's guide](https://github.com/paulwedeck/settlers-remake/wiki/Developer's%20Guide) can be found in our wiki.
 
