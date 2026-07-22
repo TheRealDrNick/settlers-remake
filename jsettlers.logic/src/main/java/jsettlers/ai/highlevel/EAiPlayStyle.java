@@ -28,14 +28,14 @@ import jsettlers.logic.constants.ExtendedRandom;
  * @author jsettlers naval/behaviour AI
  */
 public enum EAiPlayStyle {
-	/** Cautious: attacks only with a clear advantage and keeps a large home garrison; rarely ventures overseas; waits longest before attacking. */
-	TURTLE(0.8f, 1.4f, 1.5f),
+	/** Cautious: attacks only with a clear advantage, keeps a large home garrison, rarely ventures overseas, waits longest before attacking, and seldom harasses. */
+	TURTLE(0.8f, 1.4f, 1.5f, 0.05f),
 	/** The neutral baseline - behaves like the difficulty defaults. */
-	BALANCED(1.0f, 1.0f, 1.0f),
-	/** Presses attacks readily, keeps only a small garrison at home, and starts attacking sooner. */
-	AGGRESSOR(1.25f, 0.85f, 0.4f),
-	/** Loves shipping troops around: eager to commit overseas invasions and flanks with a smaller surplus; attacks fairly early. */
-	RAIDER(1.1f, 0.7f, 0.6f);
+	BALANCED(1.0f, 1.0f, 1.0f, 0.15f),
+	/** Presses attacks readily, keeps only a small garrison at home, starts attacking sooner, and harasses often. */
+	AGGRESSOR(1.25f, 0.85f, 0.4f, 0.30f),
+	/** Loves shipping troops around: eager to commit overseas invasions and flanks with a smaller surplus; attacks fairly early; harasses the most. */
+	RAIDER(1.1f, 0.7f, 0.6f, 0.35f);
 
 	public static final EAiPlayStyle[] VALUES = values();
 
@@ -45,11 +45,14 @@ public enum EAiPlayStyle {
 	public final float navalCautionFactor;
 	/** Multiplies the opening no-attack grace period: &gt;1 waits longer before the first offensive, &lt;1 attacks sooner. */
 	public final float attackGraceFactor;
+	/** Probability, evaluated each heavy tick (when a large troop surplus exists), of launching a small harassment raid. */
+	public final float harassChance;
 
-	EAiPlayStyle(float aggressionFactor, float navalCautionFactor, float attackGraceFactor) {
+	EAiPlayStyle(float aggressionFactor, float navalCautionFactor, float attackGraceFactor, float harassChance) {
 		this.aggressionFactor = aggressionFactor;
 		this.navalCautionFactor = navalCautionFactor;
 		this.attackGraceFactor = attackGraceFactor;
+		this.harassChance = harassChance;
 	}
 
 	/**
