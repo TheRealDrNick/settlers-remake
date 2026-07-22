@@ -904,6 +904,22 @@ public class AiStatistics {
 	}
 
 	/**
+	 * Public accessor used by {@link jsettlers.ai.army.ColonizationModule} (Phase 1) to find where a ferry should unload pioneers next to a
+	 * sea-reachable deposit. It reuses the exact partition/landing logic behind {@link #getSeaReachableResourceTargets(byte, EResourceType)}
+	 * so that any target the scan returns has a consistent, ship-navigable landing tile.
+	 *
+	 * @return the nearest water tile beside {@code target} that is navigable by ship from the player's home coast (unloading a ferry there
+	 *         drops the settlers on the adjacent land), or null if the player has no navigable coast or no landing is in range.
+	 */
+	public ShortPoint2D getSeaReachableLandingNear(byte playerId, ShortPoint2D target) {
+		ShortPoint2D homeCoastWater = findHomeCoastWaterFor(playerId);
+		if (homeCoastWater == null) {
+			return null;
+		}
+		return findSeaReachableLandingNear(target, homeCoastWater);
+	}
+
+	/**
 	 * A pure value heuristic that rates how worthwhile settling a given off-landmass deposit would be. It is not consumed by any decision
 	 * yet (Phase 0). Higher is better:
 	 * <p>
