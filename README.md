@@ -91,7 +91,7 @@ This fork focuses on making the computer players smarter and more fun to play ag
 
 There are four difficulty levels, from *very easy* to *very hard*. The difficulty mainly controls how fast and strong the enemy's economy is – a *very hard* enemy builds up a much stronger economy and army than an *easy* one. The personality above is added on top of the difficulty, so a *very hard* enemy is always the strongest, it just fights in its own style.
 
-Difficulty also changes *how cleverly* the enemy fights, not only how fast it grows: the harder levels use the advanced tactics (such as the probing harassment raids described above), while the easier levels deliberately leave them out and play a plainer, more forgiving game. Harder enemies always keep every tactic an easier one has, so a higher difficulty is never weaker.
+Difficulty also changes *how cleverly* the enemy fights, not only how fast it grows: the harder levels use the advanced tactics (such as the probing harassment raids described above), while the easier levels deliberately leave them out and play a plainer, more forgiving game. Harder enemies always keep every tactic an easier one has, so a higher difficulty is never weaker. As a first step towards making easier enemies feel less all-knowing, the *easy* levels now also send the occasional scout out towards you to "explore" instead of silently knowing where everything is.
 
 By default, when a single-player game has several computer players, the first one is the weakest and each following one is a bit harder. You can change this with the `fixed-ai-type` option described under **Configuration Flags** above (for example `--fixed-ai-type=ROMAN_VERY_HARD` to make every computer player very hard).
 
