@@ -66,6 +66,9 @@ public class HarassmentModule extends ArmyModule {
 
 	@Override
 	public void applyHeavyRules(Set<Integer> soldiersWithOrders) {
+		if (!parent.usesAdvancedTactics()) {
+			return; // only the higher difficulties probe with harassment raids; easier AIs play a plain, predictable game
+		}
 		if (isWithinAttackGracePeriod()) {
 			return; // no offensive raids during the opening grace period
 		}

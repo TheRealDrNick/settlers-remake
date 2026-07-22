@@ -5,6 +5,7 @@ import jsettlers.ai.highlevel.AiStatistics;
 import jsettlers.ai.highlevel.EAiPlayStyle;
 import jsettlers.common.action.EMoveToType;
 import jsettlers.common.action.SetMaterialProductionAction;
+import jsettlers.common.ai.EPlayerType;
 import jsettlers.common.material.EMaterialType;
 import jsettlers.common.movable.EMovableType;
 import jsettlers.common.movable.ESoldierType;
@@ -158,6 +159,18 @@ public class ArmyFramework {
 
 	public byte getPlayerId() {
 		return player.getPlayerId();
+	}
+
+	/**
+	 * @return true for the higher difficulties (hard and very hard), which use the AI's advanced tactics - clever target selection,
+	 *         probing harassment raids and adaptive aggression. Easier AIs deliberately forgo these and fight in a cruder, more
+	 *         predictable "beginner" style, so that the difficulty setting changes how the enemy <em>behaves</em>, not only how fast
+	 *         its economy grows. The difficulty ordering is preserved because only the easier levels are held back, never the harder
+	 *         ones (a hard AI keeps every tactic a very-hard AI has).
+	 */
+	public boolean usesAdvancedTactics() {
+		EPlayerType type = player.getPlayerType();
+		return type == EPlayerType.AI_HARD || type == EPlayerType.AI_VERY_HARD;
 	}
 
 	AiPositions getEnemiesInTown() {

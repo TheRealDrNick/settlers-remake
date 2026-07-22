@@ -3,6 +3,10 @@ apply plugin: 'java'
 
 task aiDifficultiesIT(type: Test, dependsOn: testClasses) {
 	include '**/AiDifficultiesIT*'
+	// This task is a separate Test task and does NOT inherit the test{} block below, so it needs its own heap. Each battle simulates a
+	// full match; running several parameterised battles back-to-back in one JVM was intermittently exhausting the default heap and
+	// failing with OutOfMemoryError (mistakable for a balance regression). Give it the same generous heap the unit tests use.
+	maxHeapSize = "4G"
 }
 
 task autoReplayIT(type: Test, dependsOn: testClasses) {
