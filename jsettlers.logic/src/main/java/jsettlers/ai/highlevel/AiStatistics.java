@@ -311,12 +311,40 @@ public class AiStatistics {
 				Player player = partitionsGrid.getPlayerAt(x, y);
 				if(player == null) continue;
 
-				if (partitionsGrid.getPartitionIdAt(x, y) == playerStatistics[player.playerId].partitionIdToBuildOn) {
+				if (isBuildablePartitionForPlayer(x, y, playerStatistics[player.playerId])) {
 					updatePlayerLand(x, y, player);
 				}
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * Decides whether a tile the player owns counts as buildable land for that player. Historically the AI modelled every player as owning a
+	 * single partition ({@link PlayerStatistic#partitionIdToBuildOn}, the partition of its first tower/castle) and only that partition was
+	 * buildable. Cross-water colonization (Phase 1) lets the player claim a beachhead on a <em>different</em> landmass; Phase 2 must recognise
+	 * that beachhead as buildable so an outpost can be raised there.
+	 * <p>
+	 * A tile is buildable if it is on the home partition (the original behaviour) or if it is a claimed beachhead: a walkable tile the player
+	 * owns that lies on a landmass which is <b>not reachable by land</b> from the player's base (i.e. it can only be reached across water).
+	 * <p>
+	 * <b>Inertness.</b> When the player owns exactly one buildable partition - always the case on land-only maps such as the difficulty-test
+	 * map {@code SpezialSumpf}, where no beachhead is ever claimed - every owned tile is on {@code partitionIdToBuildOn} and the first branch
+	 * returns immediately, so the beachhead branch is never evaluated and behaviour is byte-for-byte identical to the previous single-partition
+	 * logic. The beachhead branch only ever fires for a tile on a genuinely different landmass, which cannot exist on a single-landmass map.
+	 */
+	private boolean isBuildablePartitionForPlayer(int x, int y, PlayerStatistic playerStatistic) {
+		if (partitionsGrid.getPartitionIdAt(x, y) == playerStatistic.partitionIdToBuildOn) {
+			return true; // home partition - original, unchanged behaviour
+		}
+		ShortPoint2D reference = playerStatistic.referencePosition;
+		if (reference == null) {
+			return false; // no base yet, so "across water" is undefined
+		}
+		// a claimed beachhead: a walkable owned tile on a landmass the base cannot reach by land. Restricting to walkable tiles keeps the
+		// landmass comparison well-defined (isReachable treats blocked tiles as unreachable) and matches the old behaviour for blocked tiles.
+		return !landscapeGrid.isBlockedFor(x, y, false)
+				&& !landscapeGrid.isReachable(x, y, reference.x, reference.y, false);
 	}
 
 	private Void pioneerMapStatUpdater() {
