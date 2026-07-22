@@ -39,6 +39,7 @@ import jsettlers.common.buildings.EBuildingType;
 import jsettlers.common.buildings.IMaterialProductionSettings;
 import jsettlers.common.landscape.ELandscapeType;
 import jsettlers.common.landscape.EResourceType;
+import jsettlers.common.map.shapes.HexGridArea;
 import jsettlers.common.mapobject.EMapObjectType;
 import jsettlers.common.material.EMaterialType;
 import jsettlers.common.movable.EDirection;
@@ -805,6 +806,158 @@ public class AiStatistics {
 			}
 		}
 		return false;
+	}
+
+	// ---------------------------------------------------------------------------------------------------------------------------------
+	// Cross-water colonization target scan (Phase 0). Pure, deterministic query + value heuristic. Not wired into any decision yet: it
+	// lets a later phase discover off-landmass resource deposits (e.g. ore on another island) that the player could only reach by sea,
+	// and rate how worthwhile settling one would be. It changes no economy, construction or army behaviour.
+
+	// how far around an off-shore ore tile to look for a water tile a ferry could land next to (mirrors NavalInvasionModule)
+	private static final int COLONIZATION_LANDING_SEARCH_RADIUS = 20;
+	// weight applied to the summed raw resource amount of a reachable deposit when turning it into a "gain" score
+	private static final double COLONIZATION_ORE_GAIN_WEIGHT = 1.0;
+	// extra multiplier for a resource the home partition currently has none of, so scarce ore is chased more eagerly
+	private static final double COLONIZATION_SCARCE_RESOURCE_WEIGHT = 3.0;
+	// cost per tile of sea distance the ferry has to cover from the home coast to the landing site
+	private static final double COLONIZATION_FERRY_COST_FACTOR = 0.5;
+	// fixed penalty representing the material/economy investment of shipping settlers and raising an outpost
+	private static final double COLONIZATION_BUILD_COST = 40.0;
+	// penalty per enemy military building already present on the target's landmass (an occupied island is dangerous to settle)
+	private static final double COLONIZATION_DEFENSE_RISK_PENALTY = 30.0;
+
+	/**
+	 * Finds deposits of the given resource that the player could only reach by sea: ore that is <b>not</b> on the player's home landmass
+	 * (land-reachable ore is already handled by normal pioneer expansion) but that has a water tile beside it which is navigable by ship
+	 * from a coastal foothold near the player's base. Enumerates candidates from the pre-built {@code sortedResourceTypes} index rather
+	 * than scanning the whole map. The result is deterministic (the index and all scans iterate in a stable order).
+	 *
+	 * @return the positions of sea-reachable off-landmass deposits of {@code resourceType}, in stable order; empty if the player has no
+	 *         base yet, no navigable coast, or no such deposit exists.
+	 */
+	public List<ShortPoint2D> getSeaReachableResourceTargets(byte playerId, EResourceType resourceType) {
+		List<ShortPoint2D> targets = new ArrayList<>();
+		if (playerStatistics[playerId].referencePosition == null) {
+			return targets; // no base yet, so reachability is undefined
+		}
+		ShortPoint2D homeCoastWater = findHomeCoastWaterFor(playerId);
+		if (homeCoastWater == null) {
+			return targets; // the player's base does not touch navigable water, so nothing is reachable by sea
+		}
+		for (ShortPoint2D ore : sortedResourceTypes[resourceType.ordinal]) {
+			if (hasPlayersBlockedPartition(playerId, ore.x, ore.y)) {
+				continue; // on our own landmass - reachable by land, not a colonization target
+			}
+			if (findSeaReachableLandingNear(ore, homeCoastWater) != null) {
+				targets.add(ore);
+			}
+		}
+		return targets;
+	}
+
+	/**
+	 * @return a water tile touching the player's territory that is navigable by ship (a sea partition) and closest to the base, or null if
+	 *         the player's land does not border navigable water. This is the notional embarkation point a ferry would leave from (the same
+	 *         idiom {@link jsettlers.ai.construction.DockyardConstructionPositionFinder} uses to find a shore for a dock).
+	 */
+	private ShortPoint2D findHomeCoastWaterFor(byte playerId) {
+		ShortPoint2D reference = playerStatistics[playerId].referencePosition;
+		if (reference == null) {
+			return null;
+		}
+		ShortPoint2D best = null;
+		int bestDistance = Integer.MAX_VALUE;
+		for (ShortPoint2D land : getLandForPlayer(playerId)) {
+			for (EDirection direction : EDirection.VALUES) {
+				int wx = direction.gridDeltaX + land.x;
+				int wy = direction.gridDeltaY + land.y;
+				if (!mainGrid.isInBounds(wx, wy) || !landscapeGrid.getLandscapeTypeAt(wx, wy).isWater) {
+					continue;
+				}
+				if (landscapeGrid.isBlockedFor(wx, wy, true)) {
+					continue; // not part of a sea partition (e.g. a landlocked pond) - a ferry could not sail from here
+				}
+				int distance = reference.getOnGridDistTo(new ShortPoint2D(wx, wy));
+				if (distance < bestDistance) {
+					bestDistance = distance;
+					best = new ShortPoint2D(wx, wy);
+				}
+			}
+		}
+		return best;
+	}
+
+	/**
+	 * @return the nearest water tile to {@code target} that is navigable by ship from {@code dockWater}, or null if none is within range.
+	 *         Unloading a ferry there would drop settlers on the land next to it (see FerryMovable.unloadFerry). Mirrors
+	 *         {@link jsettlers.ai.army.NavalInvasionModule}'s landing search.
+	 */
+	private ShortPoint2D findSeaReachableLandingNear(ShortPoint2D target, ShortPoint2D dockWater) {
+		short width = mainGrid.getWidth();
+		short height = mainGrid.getHeight();
+		return HexGridArea.stream(target.x, target.y, 1, COLONIZATION_LANDING_SEARCH_RADIUS)
+				.filterBounds(width, height)
+				.filter((x, y) -> landscapeGrid.getLandscapeTypeAt(x, y).isWater)
+				.filter((x, y) -> landscapeGrid.isReachable(dockWater.x, dockWater.y, x, y, true))
+				.getFirst()
+				.orElse(null);
+	}
+
+	/**
+	 * A pure value heuristic that rates how worthwhile settling a given off-landmass deposit would be. It is not consumed by any decision
+	 * yet (Phase 0). Higher is better:
+	 * <p>
+	 * {@code value = ore_gain - ferry_cost - build_cost - defense_risk}
+	 * <ul>
+	 * <li>ore_gain: summed raw resource amount over the deposit, boosted when the home partition currently has none of this resource;</li>
+	 * <li>ferry_cost: sea distance from the home coast to the landing tile, times a small factor;</li>
+	 * <li>build_cost: a fixed outpost-investment penalty;</li>
+	 * <li>defense_risk: a penalty per enemy military building already on the deposit's landmass.</li>
+	 * </ul>
+	 *
+	 * @param reachableOre
+	 *            the deposit to rate, typically a subset of {@link #getSeaReachableResourceTargets(byte, EResourceType)}.
+	 * @return the score, or {@link Double#NEGATIVE_INFINITY} if the deposit is empty or not actually sea-reachable.
+	 */
+	public double rateSeaReachableResourceTarget(byte playerId, EResourceType resourceType, List<ShortPoint2D> reachableOre) {
+		if (reachableOre.isEmpty()) {
+			return Double.NEGATIVE_INFINITY;
+		}
+		ShortPoint2D homeCoastWater = findHomeCoastWaterFor(playerId);
+		if (homeCoastWater == null) {
+			return Double.NEGATIVE_INFINITY;
+		}
+		ShortPoint2D representative = reachableOre.get(0);
+		ShortPoint2D landing = findSeaReachableLandingNear(representative, homeCoastWater);
+		if (landing == null) {
+			return Double.NEGATIVE_INFINITY;
+		}
+
+		double oreAmount = 0;
+		for (ShortPoint2D ore : reachableOre) {
+			oreAmount += landscapeGrid.getResourceAmountAt(ore.x, ore.y);
+		}
+		double shortageWeight = resourceCountOfPlayer(resourceType, playerId) <= 0 ? COLONIZATION_SCARCE_RESOURCE_WEIGHT : 1.0;
+		double oreGain = oreAmount * COLONIZATION_ORE_GAIN_WEIGHT * shortageWeight;
+
+		double ferryCost = homeCoastWater.getOnGridDistTo(landing) * COLONIZATION_FERRY_COST_FACTOR;
+		double defenseRisk = colonizationDefenseRisk(playerId, representative);
+
+		return oreGain - ferryCost - COLONIZATION_BUILD_COST - defenseRisk;
+	}
+
+	/** @return a penalty proportional to the number of finished-or-not military buildings alive enemies own on {@code target}'s landmass. */
+	private double colonizationDefenseRisk(byte playerId, ShortPoint2D target) {
+		int targetPartition = partitionsGrid.getPartitionIdAt(target.x, target.y);
+		int enemyMilitaryBuildings = 0;
+		for (IPlayer enemy : getAliveEnemiesOf(partitionsGrid.getPlayer(playerId))) {
+			for (ShortPoint2D position : getBuildingPositionsOfTypesForPlayer(EBuildingType.MILITARY_BUILDINGS, enemy.getPlayerId())) {
+				if (partitionsGrid.getPartitionIdAt(position.x, position.y) == targetPartition) {
+					enemyMilitaryBuildings++;
+				}
+			}
+		}
+		return enemyMilitaryBuildings * COLONIZATION_DEFENSE_RISK_PENALTY;
 	}
 
 	public static ShortPoint2D calculateAveragePointFromList(List<ShortPoint2D> points) {
