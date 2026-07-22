@@ -107,8 +107,14 @@ public class ColonizationModule extends ArmyModule {
 		if (!colonizationEnabled) {
 			return; // easy AIs and the human player never colonize across water
 		}
-		// gate 1 - land expansion must be (nearly) exhausted; while there is still home land to claim, normal pioneer expansion handles it
-		if (parent.aiStatistics.getBorderIngestibleByPioneersOf(playerId).size() > BORDER_EXHAUSTED_THRESHOLD) {
+		// gate 1 - decide whether we want to colonize at all this tick. Two ways in:
+		//   (a) home land expansion is (nearly) exhausted - there is little left to claim at home, so look overseas; or
+		//   (b) opportunistic: we have settlers to spare beyond the home reserve, so a strong nation expands overseas proactively rather
+		//       than only when boxed in. On a large home island (a) may never happen within a game, so (b) is what actually gets the AI
+		//       to colonize; the later gates (a ready dockyard + a positive-value sea target) still ensure it only does so when worthwhile.
+		boolean landExpansionExhausted = parent.aiStatistics.getBorderIngestibleByPioneersOf(playerId).size() <= BORDER_EXHAUSTED_THRESHOLD;
+		boolean settlersToSpare = joblessBearersBeyondReserve() >= SQUAD_SIZE;
+		if (!landExpansionExhausted && !settlersToSpare) {
 			return;
 		}
 		// gate 2 - seaworthy infrastructure must already exist (the economy builds the dockyard, WhatToDoAi.assignDocks() gives it a dock)

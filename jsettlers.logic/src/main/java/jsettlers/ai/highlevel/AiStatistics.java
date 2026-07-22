@@ -883,6 +883,26 @@ public class AiStatistics {
 		return targets;
 	}
 
+	// TEMP colonization diagnosis - remove before merge
+	public String debugColonizationScan(byte playerId, EResourceType resourceType) {
+		ShortPoint2D homeCoast = findHomeCoastWaterFor(playerId);
+		int total = 0;
+		int offLandmass = 0;
+		int withSeaLanding = 0;
+		for (ShortPoint2D ore : sortedResourceTypes[resourceType.ordinal]) {
+			total++;
+			if (hasPlayersBlockedPartition(playerId, ore.x, ore.y)) {
+				continue;
+			}
+			offLandmass++;
+			if (homeCoast != null && findSeaReachableLandingNear(ore, homeCoast) != null) {
+				withSeaLanding++;
+			}
+		}
+		return resourceType + " total=" + total + " offLandmass=" + offLandmass + " withSeaLanding=" + withSeaLanding
+				+ " homeCoast=" + (homeCoast == null ? "NULL" : (homeCoast.x + "," + homeCoast.y));
+	}
+
 	/**
 	 * @return a water tile touching the player's territory that is navigable by ship (a sea partition) and closest to the base, or null if
 	 *         the player's land does not border navigable water. This is the notional embarkation point a ferry would leave from (the same

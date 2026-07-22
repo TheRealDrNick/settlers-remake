@@ -26,6 +26,7 @@ import jsettlers.ai.highlevel.AiStatistics;
 import jsettlers.common.CommonConstants;
 import jsettlers.common.ai.EPlayerType;
 import jsettlers.common.buildings.EBuildingType;
+import jsettlers.common.landscape.EResourceType;
 import jsettlers.common.material.EMaterialType;
 import jsettlers.common.menu.IStartedGame;
 import jsettlers.common.player.ECivilisation;
@@ -145,6 +146,39 @@ public class ColonizationIT {
 					"[ColonizationIT] t=%3dmin homePart=%d | dockyards=%d harbors=%d ferries=%d cargoShips=%d | beachheadGround=%d deliveredPlanks=%d deliveredStone=%d | foreignTower(building=%d finished=%d occupied=%d)%n",
 					minute, homePartition, dockyards, harbors, ferries, cargoShips, beachheadGround, deliveredPlanks, deliveredStone,
 					foreignMilitaryUnderConstruction, foreignMilitaryFinished, foreignMilitaryOccupied);
+
+			// --- trigger/scan diagnostics: why is (or isn't) colonization firing? ---
+			int borderIngestible = aiStatistics.getBorderIngestibleByPioneersOf(subjectId).size();
+			int joblessBearers = aiStatistics.getPositionsOfJoblessBearersForPlayer(subjectId).size();
+			int seaCoal = aiStatistics.getSeaReachableResourceTargets(subjectId, EResourceType.COAL).size();
+			int seaIron = aiStatistics.getSeaReachableResourceTargets(subjectId, EResourceType.IRONORE).size();
+			int seaGold = aiStatistics.getSeaReachableResourceTargets(subjectId, EResourceType.GOLDORE).size();
+			System.out.printf(
+					"[ColonizationIT.diag] t=%3dmin | borderIngestible=%d joblessBearers=%d | seaReachableTargets(coal=%d iron=%d gold=%d)%n",
+					minute, borderIngestible, joblessBearers, seaCoal, seaIron, seaGold);
+			if (minute == 60 || minute == 120) {
+				int gridIron = 0, gridCoal = 0, gridGold = 0, gridFish = 0, gridAny = 0;
+				for (short gx = 0; gx < mainGrid.getWidth(); gx++) {
+					for (short gy = 0; gy < mainGrid.getHeight(); gy++) {
+						if (mainGrid.getLandscapeGrid().getResourceAmountAt(gx, gy) > 0) {
+							gridAny++;
+							switch (mainGrid.getLandscapeGrid().getResourceTypeAt(gx, gy)) {
+							case IRONORE: gridIron++; break;
+							case COAL: gridCoal++; break;
+							case GOLDORE: gridGold++; break;
+							case FISH: gridFish++; break;
+							default: break;
+							}
+						}
+					}
+				}
+				System.out.printf("[ColonizationIT.grid] t=%dmin rawResourceTiles any=%d iron=%d coal=%d gold=%d fish=%d%n",
+						minute, gridAny, gridIron, gridCoal, gridGold, gridFish);
+				System.out.println("[ColonizationIT.scan] " + aiStatistics.debugColonizationScan(subjectId, EResourceType.IRONORE));
+				System.out.println("[ColonizationIT.scan] " + aiStatistics.debugColonizationScan(subjectId, EResourceType.COAL));
+				System.out.println("[ColonizationIT.scan] " + aiStatistics.debugColonizationScan(subjectId, EResourceType.GOLDORE));
+				System.out.println("[ColonizationIT.scan] " + aiStatistics.debugColonizationScan(subjectId, EResourceType.FISH));
+			}
 
 			if (foreignMilitaryOccupied > 0) {
 				colonizedAndHeld = true;
