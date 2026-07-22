@@ -40,6 +40,72 @@ public abstract class SimpleStrategy extends ArmyModule {
 				* parent.getPlayStyle().aggressionFactor;
 	}
 
+	// --- Adaptive aggression -----------------------------------------------------------------------------------------------------
+	// Over a game the AI adjusts how hard it presses - the way a human would - based on how its campaign is actually going. If
+	// repeated assaults keep bleeding troops without capturing anything, it becomes more cautious and masses (and, via the upgrade
+	// module, upgrades) a bigger army before trying again, instead of feeding soldiers into the same meat-grinder; when it is clearly
+	// making progress it presses the advantage and commits on a smaller margin. The multiplier is bounded so it can never overturn the
+	// difficulty ordering (a very hard AI stays stronger than a hard one), and it is driven only by observed game state, so it stays
+	// deterministic and replay/multiplayer safe. It is intentionally not persisted across save/load - on reload the AI simply
+	// re-learns from the current situation.
+	// The band is deliberately asymmetric and gentle. The aggressive side is the stronger lever - pressing a winning campaign helps a
+	// stronger AI actually close out a game faster - while the cautious side is only a mild brake, because in this engine "mass more
+	// before attacking" delays a conquest and must never be strong enough to stop a superior AI from winning in time (verified against
+	// AiDifficultiesIT). The cautious step also only engages after a *sustained* stall, so the normal troop attrition of an ongoing
+	// siege is not mistaken for a failed assault and does not ratchet the AI into permanent passivity.
+	private static final float ADAPTIVE_AGGRESSION_MIN = 0.9f;  // most cautious: demand a modestly bigger army before committing
+	private static final float ADAPTIVE_AGGRESSION_MAX = 1.2f;  // most aggressive: press a winning campaign, attack on a smaller edge
+	private static final float ADAPTIVE_STEP_UP = 0.08f;        // per heavy tick while making progress (alive enemies losing buildings)
+	private static final float ADAPTIVE_STEP_DOWN = 0.05f;      // per heavy tick once a stall is confirmed (smaller: caution is a light brake)
+	private static final float ADAPTIVE_DRIFT = 0.03f;          // gentle return toward neutral when nothing decisive happened
+	private static final float ARMY_POWER_LOSS_EPSILON = 2f;    // combat-power drop that counts as "we lost troops" (ignores tiny noise)
+	// how many consecutive heavy ticks of "losing troops without capturing anything" before we treat the assault as genuinely stalled;
+	// this stops routine combat attrition during a long siege from being read as failure
+	private static final int ADAPTIVE_STALL_TICKS_BEFORE_CAUTION = 3;
+
+	private float adaptiveAggression = 1.0f;
+	private int lastEnemyMilitaryBuildingCount = -1;
+	private float lastArmyPower = -1f;
+	private int adaptiveStallTicks = 0;
+
+	/**
+	 * Updates {@link #adaptiveAggression} from how the campaign is going; call once per heavy tick before deciding whether to attack.
+	 * Progress (alive enemies losing military buildings) makes the AI press harder; a <em>sustained</em> stall that keeps costing us
+	 * troops makes it mass a modestly bigger army first; otherwise it drifts gently back toward neutral. Purely reads current statistics,
+	 * so it is deterministic. The multiplier is bounded to a gentle band so it never overturns the difficulty ordering.
+	 */
+	protected void updateAdaptiveAggression(SoldierPositions ourSoldiers) {
+		int enemyMilitaryBuildings = 0;
+		for (IPlayer enemy : parent.aiStatistics.getAliveEnemiesOf(parent.getPlayer())) {
+			enemyMilitaryBuildings += parent.aiStatistics.getBuildingPositionsOfTypesForPlayer(EBuildingType.MILITARY_BUILDINGS, enemy.getPlayerId()).size();
+		}
+		float ourStrength = parent.getPlayer().getCombatStrengthInformation().getCombatStrength(false);
+		float ourPower = ourSoldiers.getSoldiersCount() * ourStrength;
+
+		if (lastEnemyMilitaryBuildingCount >= 0) {
+			boolean madeProgress = enemyMilitaryBuildings < lastEnemyMilitaryBuildingCount;
+			boolean bledTroops = ourPower < lastArmyPower - ARMY_POWER_LOSS_EPSILON;
+			if (madeProgress) {
+				adaptiveStallTicks = 0;
+				adaptiveAggression = Math.min(ADAPTIVE_AGGRESSION_MAX, adaptiveAggression + ADAPTIVE_STEP_UP); // capturing ground: press on
+			} else if (bledTroops) {
+				adaptiveStallTicks++;
+				if (adaptiveStallTicks >= ADAPTIVE_STALL_TICKS_BEFORE_CAUTION) {
+					adaptiveAggression = Math.max(ADAPTIVE_AGGRESSION_MIN, adaptiveAggression - ADAPTIVE_STEP_DOWN); // confirmed stall: mass more
+				}
+			} else {
+				adaptiveStallTicks = 0; // quiet tick: nothing lost or gained, ease back toward neutral
+				if (adaptiveAggression > 1.0f) {
+					adaptiveAggression = Math.max(1.0f, adaptiveAggression - ADAPTIVE_DRIFT);
+				} else if (adaptiveAggression < 1.0f) {
+					adaptiveAggression = Math.min(1.0f, adaptiveAggression + ADAPTIVE_DRIFT);
+				}
+			}
+		}
+		lastEnemyMilitaryBuildingCount = enemyMilitaryBuildings;
+		lastArmyPower = ourPower;
+	}
+
 
 	protected boolean wouldInfantryDie(SoldierPositions enemySoldierPositions) {
 		return enemySoldierPositions.bowmenPositions.size() > SoldierProductionModule.BOWMEN_COUNT_OF_KILLING_INFANTRY;
@@ -74,7 +140,9 @@ public abstract class SimpleStrategy extends ArmyModule {
 		float ourPower = ourAttackerCount * ourStrength;
 		float enemyPower = enemySoldierPositions.getSoldiersCount() * enemyStrength;
 
-		return ourPower >= MIN_ATTACKER_COUNT && ourPower * attackerCountFactor > enemyPower;
+		// adaptiveAggression scales the required margin over the game (see updateAdaptiveAggression): while stalled the AI demands a
+		// bigger army, while winning it commits on a smaller edge. The MIN_ATTACKER_COUNT floor still guarantees a real standing army.
+		return ourPower >= MIN_ATTACKER_COUNT && ourPower * attackerCountFactor * adaptiveAggression > enemyPower;
 	}
 
 	protected void defend(SoldierPositions soldierPositions, Set<Integer> soldiersWithOrders) {

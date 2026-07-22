@@ -24,6 +24,8 @@ public class SimpleAttackStrategy extends SimpleStrategy {
 				return;
 			}
 			SoldierPositions soldierPositions = new SoldierPositions(parent.getPlayerId(), soldiersWithOrders);
+			// learn from how the campaign is going (mass more when stalled, press when winning) before deciding whether to commit
+			updateAdaptiveAggression(soldierPositions);
 			SoldierPositions enemySoldierPositions = new SoldierPositions(weakestEnemy.getPlayerId(), Set.of());
 			boolean infantryWouldDie = wouldInfantryDie(enemySoldierPositions);
 			int woundedSoldiersCount = parent.findModules(HealSoldiersModule.class).findAny().map(HealSoldiersModule::getWoundedSoldiersCount).orElse(0);
