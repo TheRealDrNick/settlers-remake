@@ -202,9 +202,10 @@ public abstract class SimpleStrategy extends ArmyModule {
 	}
 
 	protected void attack(SoldierPositions soldierPositions, boolean infantryWouldDie, Set<Integer> soldiersWithOrders) {
-		IPlayer weakestEnemy = parent.getWeakestEnemy(true);
-		if (weakestEnemy == null) return;
-		ShortPoint2D targetDoor = getTargetEnemyDoorToAttack(weakestEnemy);
+		// per-opponent adaptation may bias this toward the opponent harassing us most; falls back to the weakest enemy otherwise
+		IPlayer targetEnemy = parent.getPreferredTargetEnemy(true);
+		if (targetEnemy == null) return;
+		ShortPoint2D targetDoor = getTargetEnemyDoorToAttack(targetEnemy);
 		if(targetDoor == null) return;
 
 		if (infantryWouldDie) {
