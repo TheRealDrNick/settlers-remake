@@ -14,6 +14,9 @@ public class SimpleAttackStrategy extends SimpleStrategy {
 
 	@Override
 	public void applyHeavyRules(Set<Integer> soldiersWithOrders) {
+		if (isWithinAttackGracePeriod()) {
+			return; // do not launch offensive attacks during the opening grace period (defence still runs in SimpleDefenseStrategy)
+		}
 		if (parent.existsAliveEnemy()) {
 			// only consider enemies reachable by land; across-water enemies are handled by the naval invasion logic
 			IPlayer weakestEnemy = parent.getWeakestEnemy(true);

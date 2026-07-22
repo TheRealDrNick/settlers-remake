@@ -74,6 +74,7 @@ public class SettingsManager implements ISoundSettingsProvider {
 	private static final String SETTING_CIVILISATION = "civ";
 
 	private static final String SETTING_AI_TOWER_FOCUS = "ai-tower-focus";
+	private static final String SETTING_AI_ATTACK_GRACE_SECONDS = "ai-attack-grace-seconds";
 
 	private static SettingsManager manager;
 
@@ -86,6 +87,7 @@ public class SettingsManager implements ISoundSettingsProvider {
 		CommonConstants.PLAYALL_MUSIC = manager::isMusicPlayAll;
 		CommonConstants.MUSIC_VOLUME = manager::getMusicVolume;
 		CommonConstants.AI_MORE_TOWERS = manager::getAiTowerFocus;
+		CommonConstants.AI_ATTACK_GRACE_SECONDS = manager::getAiAttackGraceSeconds;
 	}
 
 	public static SettingsManager getInstance() {
@@ -232,6 +234,20 @@ public class SettingsManager implements ISoundSettingsProvider {
 		return Optional.ofNullable(get(SETTING_AI_TOWER_FOCUS))
 				.map(Boolean::parseBoolean)
 				.orElse(false);
+	}
+
+	/**
+	 * Opening grace period (in seconds) during which AI players do not launch offensive attacks. Default 300 (5 minutes); set 0 to let
+	 * the AI attack from the start (e.g. for a scenario that intentionally opens with an assault). Configurable via
+	 * {@code --ai-attack-grace-seconds=N}, an {@code ai-attack-grace-seconds} line in options.prp, env or property.
+	 */
+	public int getAiAttackGraceSeconds() {
+		try {
+			String value = get(SETTING_AI_ATTACK_GRACE_SECONDS);
+			return value != null ? Math.max(0, Integer.parseInt(value)) : 90;
+		} catch (NumberFormatException e) {
+			return 90;
+		}
 	}
 
 	public EBackendType getBackend() {

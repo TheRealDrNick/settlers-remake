@@ -60,6 +60,7 @@ When opening the file, you will see several options that can be enabled by uncom
 - all-ai: Let all players be played by the AI. You will be able to watch all AI players and to "assist" them during the game.
 - fixed-ai-type=YYYYY: Option to specify an AI type that shall be used for all AI players. The default behavior is to use a the weakest AI type for the first player and increase the difficulty for every player. Possible values: ROMAN_VERY_EASY, ROMAN_EASY, ROMAN_HARD, ROMAN_VERY_HARD
 - disable-ai: If this flag is enabled, no AI players will be present in single player games. 
+- ai-attack-grace-seconds=N: Number of seconds at the start of a match during which computer players do not launch offensive attacks (they still defend). Default is 90. This prevents an unfair rush in the opening seconds on maps/scenarios where a computer player starts with more troops, while still letting the AI attack normally soon after. Set it to 0 if you want computer players to be able to attack from the very beginning (e.g. for a scenario that is meant to open with an assault), or higher for a longer peace at the start.
 - locale: If you want to test a different localization than your systems default, it can be specify with this option. The value should look like: en_en.
 
 **Command line flags**
@@ -82,6 +83,7 @@ This fork focuses on making the computer players smarter and more fun to play ag
 - **They defend properly.** When you attack an enemy in several places at once, it now sends defenders to each break-in point instead of piling its whole army onto a single spot. It only commits as many troops as the threat needs, so a small raid will not pull its entire army away from the front.
 - **They can fight across water.** On maps with seas or islands, an enemy will build a dockyard, produce ferries, load soldiers, sail them across the water and land them to attack – something the AI could not do before. If your land border is heavily defended, it may even sail *around* it and land troops behind your defenses.
 - **Every enemy has a personality.** At the start of each game every computer player is randomly given a play style – for example a cautious *turtle*, a *balanced* player, an aggressive attacker, or a *raider* that loves shipping troops overseas. This makes each game feel a little different.
+- **No unfair opening rush.** Computer players wait a short time (about 90 seconds by default) before launching their first attack (they still defend immediately), so an enemy that starts a scenario with more troops will not storm your base in the opening seconds. This delay is configurable – see `ai-attack-grace-seconds` under **Configuration Flags** – and each personality waits a bit more or less (an aggressor strikes sooner, a turtle later).
 
 ### Difficulty levels
 

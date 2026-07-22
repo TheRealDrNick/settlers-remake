@@ -115,4 +115,14 @@ public abstract class CommonConstants {
 	public static Supplier<Float> MUSIC_VOLUME = () -> 1f;
 
 	public static Supplier<Boolean> AI_MORE_TOWERS = () -> false;
+
+	/**
+	 * Number of seconds from the start of a match during which AI players do not launch offensive attacks (defence is unaffected). This
+	 * prevents an unfair "opening rush" on maps/campaign scenarios where an AI starts with a pre-placed army advantage: without it the AI
+	 * would attack at the very first decision tick (~10s in). A scenario designer who wants an early assault can lower it (0 disables it).
+	 * The effective grace per AI is additionally scaled by its play style (an aggressor waits less, a turtle more).
+	 * Kept short (default 90s) on purpose: long enough to stop an instant opening ambush and let the player react, but not so long that
+	 * it delays the normal economy-driven aggression that makes the AI feel active.
+	 */
+	public static Supplier<Integer> AI_ATTACK_GRACE_SECONDS = () -> 90;
 }
