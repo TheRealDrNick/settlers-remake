@@ -57,7 +57,11 @@ import jsettlers.testutils.TestUtils;
  */
 public class ColonizationIT {
 
-	private static final File MAP_FILE = new File("C:/Games/Settlers3Maps/schifffahrtsweg4/schifffahrtsweg4.map");
+	// A real GOG Settlers 3 island map that (unlike the resource-less demo map) loads a full resource layer AND has ore on landmasses the
+	// subject cannot reach by land but can reach by sea (verified via the raw grid scan + Phase-0 sea-reachable scan below). Overridable with
+	// -DcolonizationMap=<path> so a different candidate can be tried without recompiling.
+	private static final File MAP_FILE = new File(
+			System.getProperty("colonizationMap", "C:/Games/Settlers3GOG/Map/MULTI/640-4-island_1.map"));
 	private static final int MINUTES = 1000 * 60;
 	private static final int STEP_MINUTES = 10;
 	private static final int TOTAL_MINUTES = 120;

@@ -40,4 +40,11 @@ compileJava {
 test {
 	maxParallelForks = Runtime.runtime.availableProcessors().intdiv(2) ?: 1
 	maxHeapSize = "4G"
+	// TEMP (colonization verification): forward map-selection override to the JVM running the tests
+	if (System.getProperty('scanMap') != null) {
+		systemProperty 'scanMap', System.getProperty('scanMap')
+	}
+	if (System.getProperty('colonizationMap') != null) {
+		systemProperty 'colonizationMap', System.getProperty('colonizationMap')
+	}
 }

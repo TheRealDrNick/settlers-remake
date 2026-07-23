@@ -309,6 +309,9 @@ class WhatToDoAi implements IWhatToDoAi {
 			if (buildTower()) {
 				return;
 			}
+			if (buildDockyardForNavalNeed()) {
+				return;
+			}
 			if (buildStock())
 				return;
 			buildEconomy();
@@ -347,6 +350,24 @@ class WhatToDoAi implements IWhatToDoAi {
 				.filter((x, y) -> dockyard.canDockBePlaced(new ShortPoint2D(x, y)))
 				.getFirst();
 		return dockWater.orElse(null);
+	}
+
+	/**
+	 * Builds the single dockyard promptly when there is an enemy the player can only reach across water. The economy minister
+	 * ({@link jsettlers.ai.economy.BuildingListEconomyMinister#addNavalBuildings}) queues the dockyard dead-last in the build plan, so on a
+	 * large island whose economy plan is never fully satisfied within a game it is effectively never reached - which starves the entire naval
+	 * / cross-water-colonization pipeline (both need a ready dockyard). Elevating just the dockyard here fixes that without reordering the rest
+	 * of the plan. It is gated on {@code hasEnemyAcrossWaterOf}, which is false on land-only maps (e.g. the SpezialSumpf difficulty-test map),
+	 * so the difficulty ladder is unaffected: {@code construct(DOCKYARD)} there would in any case fail to find a coastal position.
+	 */
+	private boolean buildDockyardForNavalNeed() {
+		if (aiStatistics.getTotalNumberOfBuildingTypeForPlayer(DOCKYARD, playerId) >= 1) {
+			return false; // one dockyard is enough (mirrors the economy minister's count<1 guard)
+		}
+		if (!aiStatistics.hasEnemyAcrossWaterOf(player)) {
+			return false; // no genuine across-water opponent - leave dockyard priority to the normal economy plan
+		}
+		return construct(DOCKYARD);
 	}
 
 	private boolean buildTower() {
