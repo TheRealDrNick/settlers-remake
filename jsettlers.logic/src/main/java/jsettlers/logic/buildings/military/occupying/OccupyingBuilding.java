@@ -563,6 +563,10 @@ public class OccupyingBuilding extends Building implements IBuilding.IOccupied, 
 
 		@Override
 		public void receiveHit(float strength, ShortPoint2D attackerPos, IPlayer attackingPlayer) {
+			if (MatchConstants.isPeaceTime()) {
+				return; // hard truce: the door cannot be damaged during peacetime, so the building can neither be harmed nor captured
+			}
+
 			if (occupyingBuilding.isDestroyed()) {
 				return; // building is destroyed => do nothing
 			}

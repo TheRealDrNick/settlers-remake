@@ -105,8 +105,11 @@ public class HarassmentModule extends ArmyModule {
 	}
 
 	private boolean isWithinAttackGracePeriod() {
-		long graceMillis = (long) (CommonConstants.AI_ATTACK_GRACE_SECONDS.get() * 1000L * parent.getPlayStyle().attackGraceFactor);
-		return graceMillis > 0 && MatchConstants.clock().getTime() < graceMillis;
+		// like SimpleStrategy: if the match has a peacetime, the effective grace lasts at least until it ends (raiding earlier would
+		// only send troops that cannot do any harm); the peacetime is a hard truce and not scaled by the play style.
+		long graceEndMillis = (long) (CommonConstants.AI_ATTACK_GRACE_SECONDS.get() * 1000L * parent.getPlayStyle().attackGraceFactor);
+		long effectiveEndMillis = Math.max(graceEndMillis, MatchConstants.getPeaceTimeEndMs());
+		return effectiveEndMillis > 0 && MatchConstants.clock().getTime() < effectiveEndMillis;
 	}
 
 	private List<ShortPoint2D> collectIdleReachableSoldiers(Set<Integer> soldiersWithOrders) {

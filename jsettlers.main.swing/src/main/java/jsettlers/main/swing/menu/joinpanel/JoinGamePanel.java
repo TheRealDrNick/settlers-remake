@@ -54,6 +54,7 @@ import jsettlers.common.utils.collections.ChangingList;
 import jsettlers.graphics.localization.Labels;
 import jsettlers.logic.map.loading.EMapStartResources;
 import jsettlers.logic.map.loading.MapLoader;
+import jsettlers.logic.player.EPeaceTime;
 import jsettlers.logic.player.InitialGameState;
 import jsettlers.logic.player.PlayerSetting;
 import jsettlers.main.JSettlersGame;
@@ -97,7 +98,7 @@ public class JoinGamePanel extends BackgroundPanel {
 	private final JLabel numberOfPlayersLabel = new JLabel();
 	private final NumberOfPlayersComboBox numberOfPlayersComboBox = new NumberOfPlayersComboBox(this);
 	private final JLabel peaceTimeLabel = new JLabel();
-	private final JComboBox<EPeaceTime> peaceTimeComboBox = new JComboBox<>();
+	private final JComboBox<PeaceTimeUIWrapper> peaceTimeComboBox = new JComboBox<>();
 	private final JLabel startResourcesLabel = new JLabel();
 	private final JComboBox<MapStartResourcesUIWrapper> startResourcesComboBox = new JComboBox<>();
 	private final JPanel playerSlotsPanel = new JPanel();
@@ -237,7 +238,9 @@ public class JoinGamePanel extends BackgroundPanel {
 					.toArray(PlayerSetting[]::new);
 
 			MapStartResourcesUIWrapper selected = (MapStartResourcesUIWrapper) startResourcesComboBox.getSelectedItem();
-			InitialGameState initialGameState = new InitialGameState(playerSlots.get(0).getSlot(), playerSettings, randomSeed, selected.getStartResources());
+			PeaceTimeUIWrapper selectedPeaceTime = (PeaceTimeUIWrapper) peaceTimeComboBox.getSelectedItem();
+			InitialGameState initialGameState = new InitialGameState(playerSlots.get(0).getSlot(), playerSettings, randomSeed, selected.getStartResources(),
+					selectedPeaceTime.getPeaceTime());
 			JSettlersGame game = new JSettlersGame(mapLoader, initialGameState);
 			IStartingGame startingGame = game.start();
 			settlersFrame.showStartingGamePanel(startingGame);
@@ -404,7 +407,10 @@ public class JoinGamePanel extends BackgroundPanel {
 		mapNameLabel.setText(mapLoader.getMapName());
 		mapImage.setIcon(new ImageIcon(JSettlersSwingUtil.createBufferedImageFrom(mapLoader)));
 		peaceTimeComboBox.removeAllItems();
-		peaceTimeComboBox.addItem(EPeaceTime.WITHOUT);
+		Arrays.stream(EPeaceTime.values())
+				.map(PeaceTimeUIWrapper::new)
+				.forEach(peaceTimeComboBox::addItem);
+		peaceTimeComboBox.setSelectedIndex(EPeaceTime.WITHOUT.ordinal());
 		startResourcesComboBox.removeAllItems();
 		Arrays.stream(EMapStartResources.values())
 				.map(MapStartResourcesUIWrapper::new)
@@ -509,14 +515,5 @@ public class JoinGamePanel extends BackgroundPanel {
 		constraints.gridwidth = 1;
 		constraints.fill = GridBagConstraints.HORIZONTAL;
 		playerSlotsPanel.add(slotsHeadlineTeam, constraints);
-	}
-
-	private enum EPeaceTime {
-		WITHOUT;
-
-		@Override
-		public String toString() {
-			return Labels.getString("peace-time-" + name());
-		}
 	}
 }

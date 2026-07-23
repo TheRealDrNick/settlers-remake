@@ -15,14 +15,22 @@ public class InitialGameState implements Cloneable, Serializable {
 	private final PlayerSetting[] playerSettings;
 	private final long randomSeed;
 	private final EMapStartResources startResources;
+	/** The peacetime this match was created with. Part of the deterministic match state; never null. */
+	private final EPeaceTime peaceTime;
 
-	private static final byte VERSION = 1;
+	private static final byte VERSION_PEACE_TIME_INTRODUCED = 2;
+	private static final byte VERSION = 2;
 
-	public InitialGameState(byte playerId, PlayerSetting[] playerSettings, long randomSeed, EMapStartResources startResources) {
+	public InitialGameState(byte playerId, PlayerSetting[] playerSettings, long randomSeed, EMapStartResources startResources, EPeaceTime peaceTime) {
 		this.playerId = playerId;
 		this.playerSettings = playerSettings;
 		this.randomSeed = randomSeed;
 		this.startResources = startResources;
+		this.peaceTime = peaceTime;
+	}
+
+	public InitialGameState(byte playerId, PlayerSetting[] playerSettings, long randomSeed, EMapStartResources startResources) {
+		this(playerId, playerSettings, randomSeed, startResources, EPeaceTime.WITHOUT);
 	}
 
 	public InitialGameState(byte playerId, PlayerSetting[] playerSettings, long randomSeed) {
@@ -36,6 +44,7 @@ public class InitialGameState implements Cloneable, Serializable {
 		randomSeed = dis.readLong();
 		playerId = dis.readByte();
 		startResources = EMapStartResources.values()[dis.readByte()];
+		peaceTime = readVersion >= VERSION_PEACE_TIME_INTRODUCED ? EPeaceTime.values()[dis.readByte()] : EPeaceTime.WITHOUT;
 
 		playerSettings = new PlayerSetting[dis.readInt()];
 		for (int i = 0; i < playerSettings.length; i++) {
@@ -60,6 +69,13 @@ public class InitialGameState implements Cloneable, Serializable {
 		return startResources;
 	}
 
+	/**
+	 * @return the peacetime this match was created with; never null.
+	 */
+	public EPeaceTime getPeaceTime() {
+		return peaceTime;
+	}
+
 	public PlayerSetting[] getReplayablePlayerSettings() {
 		PlayerSetting[] playerSettings = new PlayerSetting[this.playerSettings.length];
 		for (int i = 0; i < playerSettings.length; i++) {
@@ -74,6 +90,7 @@ public class InitialGameState implements Cloneable, Serializable {
 		dos.writeLong(randomSeed);
 		dos.writeByte(playerId);
 		dos.writeByte(startResources.ordinal());
+		dos.writeByte(peaceTime.ordinal());
 
 		dos.writeInt(playerSettings.length);
 		for (PlayerSetting playerSetting : playerSettings) {
@@ -83,7 +100,7 @@ public class InitialGameState implements Cloneable, Serializable {
 
 	@Override
 	public InitialGameState clone() {
-		return new InitialGameState(playerId, getReplayablePlayerSettings(), randomSeed, startResources);
+		return new InitialGameState(playerId, getReplayablePlayerSettings(), randomSeed, startResources, peaceTime);
 	}
 
 	@Override
@@ -93,6 +110,7 @@ public class InitialGameState implements Cloneable, Serializable {
 				", playerSettings=" + Arrays.toString(playerSettings) +
 				", randomSeed=" + randomSeed +
 				", startResources=" + startResources +
+				", peaceTime=" + peaceTime +
 				'}';
 	}
 }

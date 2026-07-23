@@ -44,7 +44,8 @@ public class SavegameLoader extends RemakeMapLoader {
 		@Override
 	public MainGridWithUiSettings loadMainGrid(PlayerSetting[] playerSettings, EMapStartResources startResources) throws MapLoadException {
 		try (ObjectInputStream ois = new ObjectInputStream(super.getMapDataStream())) {
-			MatchConstants.deserialize(ois);
+			// savegames written before the peacetime feature do not contain the peacetime field; the header version tells us
+			MatchConstants.deserialize(ois, getFileHeader().getFileVersion() >= MapFileHeader.VERSION_PEACE_TIME_INTRODUCED);
 			PlayerState[] playerStates = (PlayerState[]) ois.readObject();
 			GameSerializer gameSerializer = new GameSerializer();
 			MainGrid mainGrid = gameSerializer.load(ois);

@@ -52,14 +52,14 @@ public final class MapUtils {
 				CountingInputStream actualStream = new CountingInputStream(RemakeMapLoader.getMapInputStream(actualSavegame.getListedMap()))) {
 			MapFileHeader expectedHeader = MapFileHeader.readFromStream(expectedStream);
 			MatchConstants.init(new NetworkTimer(true), 0L);
-			MatchConstants.deserialize(new ObjectInputStream(expectedStream));
+			MatchConstants.deserialize(new ObjectInputStream(expectedStream), expectedHeader.getFileVersion() >= MapFileHeader.VERSION_PEACE_TIME_INTRODUCED);
 			int expectedTime = MatchConstants.clock().getTime();
 			ExtendedRandom expectedRandom = MatchConstants.random();
 			MatchConstants.clearState();
 
 			MapFileHeader actualHeader = MapFileHeader.readFromStream(actualStream);
 			MatchConstants.init(new NetworkTimer(true), 1L);
-			MatchConstants.deserialize(new ObjectInputStream(actualStream));
+			MatchConstants.deserialize(new ObjectInputStream(actualStream), actualHeader.getFileVersion() >= MapFileHeader.VERSION_PEACE_TIME_INTRODUCED);
 			int actualTime = MatchConstants.clock().getTime();
 			ExtendedRandom actualRandom = MatchConstants.random();
 			MatchConstants.clearState();
