@@ -55,7 +55,9 @@ public class MapFileHeader {
 	private static final short VERSION_DATE_ALWAYS_SAVED = 3;
 	private static final short VERSION_PLAYER_CONFIGURATIONS = 4;
 	private static final short VERSION_PLAYER_ID = 5;
-	private static final short VERSION = 5;
+	/** From this header version on, the savegame body's MatchConstants block contains the peacetime end time (see MatchConstants). */
+	public static final short VERSION_PEACE_TIME_INTRODUCED = 6;
+	private static final short VERSION = 6;
 
 	private static final byte[] START_BYTES = new byte[] {
 			'M', 'A', 'P', ' '
@@ -75,6 +77,11 @@ public class MapFileHeader {
 	private final Date creationDate;
 	private final short[] previewImage;
 	private final Byte playerId;
+	/**
+	 * The header version this file was read with (or {@link #VERSION} for newly created headers). Lets loaders of version-dependent body
+	 * content (e.g. the savegame's MatchConstants block) stay compatible with files written by older versions of the game.
+	 */
+	private final short fileVersion;
 
 	/**
 	 * The content type of a map file.
@@ -88,16 +95,16 @@ public class MapFileHeader {
 
 	public MapFileHeader(MapType type, String name, String baseMapId, String description, short width, short height, short minPlayers, short maxPlayers, Date date, short[] previewImage) {
 		this(type, name, UUID.randomUUID().toString(), baseMapId, description, width, height, minPlayers, PlayerSetting.getUnspecifiedPlayerSettings(maxPlayers),
-				date, previewImage, null);
+				date, previewImage, null, VERSION);
 	}
 
 	public MapFileHeader(MapType type, String name, String baseMapId, String description, short width, short height, short minPlayers, PlayerSetting[] playerConfigurations, Date date,
 			short[] previewImage, Byte playerId) {
-		this(type, name, UUID.randomUUID().toString(), baseMapId, description, width, height, minPlayers, playerConfigurations, date, previewImage, playerId);
+		this(type, name, UUID.randomUUID().toString(), baseMapId, description, width, height, minPlayers, playerConfigurations, date, previewImage, playerId, VERSION);
 	}
 
 	private MapFileHeader(MapType type, String name, String mapId, String baseMapId, String description, short width, short height, short minPlayers, PlayerSetting[] playerSettings, Date date,
-			short[] previewImage, Byte playerId) {
+			short[] previewImage, Byte playerId, short fileVersion) {
 		if (previewImage.length != PREVIEW_IMAGE_SIZE * PREVIEW_IMAGE_SIZE) {
 			throw new IllegalArgumentException("bg image has wrong size.");
 		}
@@ -113,6 +120,14 @@ public class MapFileHeader {
 		this.creationDate = date;
 		this.previewImage = previewImage;
 		this.playerId = playerId;
+		this.fileVersion = fileVersion;
+	}
+
+	/**
+	 * @return the header version this file was read with (or the current {@link #VERSION} for newly created headers).
+	 */
+	public short getFileVersion() {
+		return fileVersion;
 	}
 
 	public MapType getType() {
@@ -254,7 +269,7 @@ public class MapFileHeader {
 				playerId = bytePlayerId == -1 ? null : bytePlayerId;
 			}
 
-			return new MapFileHeader(type, mapName, mapId, baseMapId, description, width, height, minPlayers, playerConfigurations, date, bgImage, playerId);
+			return new MapFileHeader(type, mapName, mapId, baseMapId, description, width, height, minPlayers, playerConfigurations, date, bgImage, playerId, (short) version);
 
 		} catch (Throwable t) {
 			if (t instanceof IOException) {

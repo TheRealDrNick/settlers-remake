@@ -114,11 +114,15 @@ public abstract class SimpleStrategy extends ArmyModule {
 	/**
 	 * @return true while the match is still within the opening grace period during which this AI must not launch offensive attacks. This
 	 *         prevents an unfair opening rush when a scenario gives the AI a pre-placed army; defence is not affected. The base grace
-	 *         ({@link CommonConstants#AI_ATTACK_GRACE_SECONDS}, configurable, 0 disables it) is scaled by the AI's play style.
+	 *         ({@link CommonConstants#AI_ATTACK_GRACE_SECONDS}, configurable, 0 disables it) is scaled by the AI's play style. If the
+	 *         match was created with a peacetime, the effective grace lasts at least until the peacetime ends: attacking earlier would
+	 *         only send troops that cannot do any harm. The peacetime is a hard truce and therefore NOT scaled by the play style - the
+	 *         personality scaling only applies to the configured grace portion.
 	 */
 	protected boolean isWithinAttackGracePeriod() {
-		long graceMillis = (long) (CommonConstants.AI_ATTACK_GRACE_SECONDS.get() * 1000L * parent.getPlayStyle().attackGraceFactor);
-		return graceMillis > 0 && MatchConstants.clock().getTime() < graceMillis;
+		long graceEndMillis = (long) (CommonConstants.AI_ATTACK_GRACE_SECONDS.get() * 1000L * parent.getPlayStyle().attackGraceFactor);
+		long effectiveEndMillis = Math.max(graceEndMillis, MatchConstants.getPeaceTimeEndMs());
+		return effectiveEndMillis > 0 && MatchConstants.clock().getTime() < effectiveEndMillis;
 	}
 
 

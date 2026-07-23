@@ -136,7 +136,9 @@ public class MultiplayerGame {
 			long randomSeed = packet.getRandomSeed();
 			PlayerSetting[] playerSettings = determinePlayerSettings();
 			byte ownPlayerId = calculateOwnPlayerId();
-			// TODO start resources
+			// TODO start resources and peace time: neither setting is transmitted by the network protocol yet (it would need to travel
+			// with the match info, e.g. an extended MatchInfoPacket/MatchStartPacket). Until then multiplayer matches always use the
+			// defaults (HIGH_GOODS, EPeaceTime.WITHOUT) and the lobby UI keeps both combo boxes disabled for multiplayer games.
 			InitialGameState initialGameState = new InitialGameState(ownPlayerId, playerSettings, randomSeed);
 
 			JSettlersGame game = new JSettlersGame(mapLoader, networkClient.getNetworkConnector(), initialGameState);

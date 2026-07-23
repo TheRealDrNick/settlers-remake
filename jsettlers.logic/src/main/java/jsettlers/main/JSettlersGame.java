@@ -188,7 +188,7 @@ public class JSettlersGame {
 				updateProgressListener(EProgressState.LOADING, 0.1f);
 
 				clearState();
-				MatchConstants.init(networkConnector.getGameClock(), initialGameState.getRandomSeed());
+				MatchConstants.init(networkConnector.getGameClock(), initialGameState.getRandomSeed(), initialGameState.getPeaceTime().getEndTimeMs());
 				try {
 					MatchConstants.clock().setReplayLogStream(createReplayFileStream());
 				} catch (IOException e) {

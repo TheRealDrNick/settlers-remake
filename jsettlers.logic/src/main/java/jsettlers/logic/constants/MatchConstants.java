@@ -54,12 +54,24 @@ public final class MatchConstants {
 	private static IGameClock clock;
 	private static ExtendedRandom gameRandom;
 	private static ExtendedRandom aiRandom;
+	/**
+	 * The game time in milliseconds at which the peacetime of the current match ends. 0 means the match is played without a peacetime, so
+	 * all checks short-circuit and behave exactly as before peacetime existed. This is part of the deterministic match state: it is
+	 * initialized from the {@link jsettlers.logic.player.InitialGameState} of the match (identical for all multiplayer participants and
+	 * replays) and (de)serialized with the clock and the randoms on save/load.
+	 */
+	private static int peaceTimeEndMs;
 
 	public static void init(IGameClock clock, long randomSeed) {
+		init(clock, randomSeed, 0);
+	}
+
+	public static void init(IGameClock clock, long randomSeed, int peaceTimeEndMs) {
 		clearState();
 		MatchConstants.clock = clock;
 		MatchConstants.gameRandom = new ExtendedRandom(randomSeed);
 		MatchConstants.aiRandom = new ExtendedRandom(randomSeed);
+		MatchConstants.peaceTimeEndMs = peaceTimeEndMs;
 
 		BuildingWorkerMovable.resetProductionFile();
 	}
@@ -71,6 +83,7 @@ public final class MatchConstants {
 		clock = null;
 		gameRandom = null;
 		aiRandom = null;
+		peaceTimeEndMs = 0;
 	}
 
 	public static IGameClock clock() {
@@ -85,14 +98,37 @@ public final class MatchConstants {
 		return aiRandom;
 	}
 
+	/**
+	 * @return the game time in milliseconds at which the peacetime of the current match ends; 0 if the match has no peacetime.
+	 */
+	public static int getPeaceTimeEndMs() {
+		return peaceTimeEndMs;
+	}
+
+	/**
+	 * @return true while the peacetime of the current match is still running, meaning that no combat harm (damage / capturing) is
+	 *         possible. Always false for matches created without a peacetime.
+	 */
+	public static boolean isPeaceTime() {
+		return peaceTimeEndMs > 0 && clock.getTime() < peaceTimeEndMs;
+	}
+
 	public static void serialize(ObjectOutputStream oos) throws IOException {
 		oos.writeInt(clock.getTime());
+		oos.writeInt(peaceTimeEndMs);
 		oos.writeObject(gameRandom);
 		oos.writeObject(aiRandom);
 	}
 
-	public static void deserialize(ObjectInputStream ois) throws IOException, ClassNotFoundException {
+	/**
+	 * @param containsPeaceTime
+	 *            whether the stream was written by a version that serializes the peacetime end (see
+	 *            {@link jsettlers.logic.map.loading.newmap.MapFileHeader#VERSION_PEACE_TIME_INTRODUCED}). Savegames from older versions
+	 *            omit the field and load with no peacetime, keeping them playable.
+	 */
+	public static void deserialize(ObjectInputStream ois, boolean containsPeaceTime) throws IOException, ClassNotFoundException {
 		clock.setTime(ois.readInt());
+		peaceTimeEndMs = containsPeaceTime ? ois.readInt() : 0;
 		gameRandom = (ExtendedRandom) ois.readObject();
 		aiRandom = (ExtendedRandom) ois.readObject();
 	}
