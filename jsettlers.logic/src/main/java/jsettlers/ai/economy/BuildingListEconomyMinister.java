@@ -48,6 +48,7 @@ public class BuildingListEconomyMinister implements EconomyMinister {
 	private final float weaponSmithFactor;
 	private final boolean isHighGoodsGame;
 	private final boolean isMiddleGoodsGame;
+	private final boolean isWeakAsian;
 
 	private final IPlayer player;
 	private final byte playerId;
@@ -76,6 +77,10 @@ public class BuildingListEconomyMinister implements EconomyMinister {
 		this.weaponSmithFactor = weaponSmithFactor;
 		this.isHighGoodsGame = isHighGoodsGame();
 		this.isMiddleGoodsGame = isMiddleGoodsGame();
+		// The weak ASIAN economies: AI_EASY (1/4, 1/2) and AI_VERY_EASY (1/10, 1/5), i.e. buildingIndustryFactor <= 1/2. See
+		// determineWeaponAndGoldBuildings for why their military is trimmed and why it is safe for the other civilisations and the
+		// two green ASIAN battles.
+		this.isWeakAsian = player.getCivilisation() == ECivilisation.ASIAN && buildingIndustryFactor <= 1F / 2F;
 	}
 
 	@Override
@@ -226,7 +231,16 @@ public class BuildingListEconomyMinister implements EconomyMinister {
 
 	private List<EBuildingType> determineWeaponAndGoldBuildings() {
 		List<EBuildingType> weaponsBuildings = new ArrayList<>();
-		for (int i = 0; i < (mapBuildingCounts[WEAPONSMITH.ordinal] * weaponSmithFactor); i++) {
+		// ASIAN is a wood-based civilisation: AiMapInformation gives it twice the lumberjacks and hardly any stone cutters, so its
+		// building industry is largely self-sustaining. On the swamp map this lets even the weak AIs grow a sustained army and a
+		// spread-out, well-towered territory almost as large as the next difficulty up, collapsing the intended difficulty gap - so
+		// AI_HARD could not mass a decisively larger army and overrun AI_EASY within the 75 minute limit (on ROMAN, which has no
+		// wood doubling, AI_EASY stays far weaker and AI_HARD wins comfortably at ~54 minutes). We therefore trim the weak ASIAN
+		// AIs' weapon-and-defence industry, which restores the winner's edge in the two battles they lose. This cannot affect other
+		// civilisations, and it cannot regress the green ASIAN battles: very-hard-vs-hard contains no weak AI, and in
+		// easy-vs-very-easy BOTH sides are trimmed so their relative gap - and AI_EASY's comfortable win - is preserved.
+		float effectiveWeaponSmithFactor = isWeakAsian ? weaponSmithFactor * 0.6F : weaponSmithFactor;
+		for (int i = 0; i < (mapBuildingCounts[WEAPONSMITH.ordinal] * effectiveWeaponSmithFactor); i++) {
 			weaponsBuildings.add(COALMINE);
 			if (i % 2 == 0)
 				weaponsBuildings.add(IRONMINE);
