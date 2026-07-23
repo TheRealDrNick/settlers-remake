@@ -602,8 +602,22 @@ public class BuildingListEconomyMinister implements EconomyMinister {
 
 	@Override
 	public boolean automaticLivingHousesEnabled() {
-		return aiStatistics.getNumberOfBuildingTypeForPlayer(LUMBERJACK, playerId) >= 8
-				|| aiStatistics.getNumberOfBuildingTypeForPlayer(LUMBERJACK, playerId) >= mapBuildingCounts[LUMBERJACK.ordinal] * buildingIndustryFactor
+		int lumberJackCount = aiStatistics.getNumberOfBuildingTypeForPlayer(LUMBERJACK, playerId);
+		int buildingIndustryCount = lumberJackCount;
+		if (player.getCivilisation() == ECivilisation.EGYPTIAN && buildingIndustryFactor >= 3F / 4F) {
+			// Egyptians build a stone-first economy: their build order front-loads stone cutters and reaches the (often only 8)
+			// map lumberjacks very late. Weak AIs do not suffer from this because their factor-scaled threshold below fires
+			// after a handful of lumberjacks. But a strong economy (high buildingIndustryFactor, i.e. AI_HARD and AI_VERY_HARD)
+			// needs (nearly) all map lumberjacks before either threshold fires, so it went without new bearers for the entire
+			// opening. AI_VERY_HARD (factor 1) was hit the hardest, which inverted the difficulty order: AI_HARD out-boomed and
+			// even defeated AI_VERY_HARD on Egyptian. For strong Egyptian economies we therefore count stone cutters as building
+			// industry too, which reflects the Egyptian opening. Weak Egyptian AIs keep their original unlock timing on purpose:
+			// boosting them as well (an earlier attempt counted stone cutters for every Egyptian AI) made AI_EASY defend so well
+			// that AI_HARD could no longer beat it in time.
+			buildingIndustryCount += aiStatistics.getNumberOfBuildingTypeForPlayer(STONECUTTER, playerId);
+		}
+		return buildingIndustryCount >= 8
+				|| lumberJackCount >= mapBuildingCounts[LUMBERJACK.ordinal] * buildingIndustryFactor
 				|| aiStatistics.getNumberOfBuildingTypeForPlayer(WEAPONSMITH, playerId) >= 1;
 	}
 
