@@ -3,6 +3,7 @@ package jsettlers.logic.movable.military;
 import jsettlers.algorithms.path.Path;
 import jsettlers.algorithms.simplebehaviortree.Node;
 import jsettlers.algorithms.simplebehaviortree.Root;
+import jsettlers.common.ai.EPlayerType;
 import jsettlers.common.buildings.OccupierPlace;
 import jsettlers.common.movable.EDirection;
 import jsettlers.common.movable.EEffectType;
@@ -88,6 +89,16 @@ public abstract class SoldierMovable extends AttackableHumanMovable implements I
 				guard(mov -> mov.nextTarget != null,
 					action(mov -> {
 						mov.abortGoTo();
+
+						// A human player's fresh order always takes effect immediately: break off any current pursuit so the soldier
+						// obeys at once (as in the original games). If an enemy is near the soldier again a moment later it will engage
+						// again as usual (informAboutAttackable re-raises enemyNearby) - and the next order again wins immediately.
+						// AI-issued orders keep the old semantics (an ongoing fight is never interrupted; the AI re-issues its attack
+						// orders every heavy tick and relies on move-and-engage), so AI-vs-AI matches - including the difficulty
+						// regression suite - are byte-for-byte unaffected by this.
+						if (mov.player.getPlayerType() == EPlayerType.HUMAN) {
+							mov.enemyNearby = false;
+						}
 
 						switch(mov.nextMoveToType) {
 							default:
