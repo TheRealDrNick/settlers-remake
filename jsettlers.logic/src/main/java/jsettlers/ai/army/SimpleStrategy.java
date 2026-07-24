@@ -24,7 +24,7 @@ public abstract class SimpleStrategy extends ArmyModule {
 	// how many defenders to commit per intruding enemy soldier; defenders get a home-ground combat bonus, so a modest margin suffices and
 	// the rest of the army stays free to keep attacking instead of the whole army yo-yoing home for every small raid
 	private static final int DEFENDERS_PER_INTRUDER = 2;
-	private final float attackerCountFactor;
+	protected final float attackerCountFactor;
 
 	// how readily each difficulty presses an attack: a HIGHER factor means it attacks with a smaller (or no) numeric advantage.
 	// indexed by EPlayerType.ordinal(): AI_VERY_EASY, AI_EASY, AI_HARD, AI_VERY_HARD, HUMAN. Increasing with difficulty so that stronger
@@ -205,24 +205,6 @@ public abstract class SimpleStrategy extends ArmyModule {
 		return bestDistance;
 	}
 
-	protected void attack(SoldierPositions soldierPositions, boolean infantryWouldDie, Set<Integer> soldiersWithOrders) {
-		// per-opponent adaptation may bias this toward the opponent harassing us most; falls back to the weakest enemy otherwise
-		IPlayer targetEnemy = parent.getPreferredTargetEnemy(true);
-		if (targetEnemy == null) return;
-		ShortPoint2D targetDoor = getTargetEnemyDoorToAttack(targetEnemy);
-		if(targetDoor == null) return;
-
-		if (infantryWouldDie) {
-			parent.sendTroopsTo(soldierPositions.bowmenPositions, targetDoor, soldiersWithOrders, EMoveToType.DEFAULT);
-		} else {
-			List<ShortPoint2D> soldiers = new ArrayList<>(soldierPositions.bowmenPositions.size() + soldierPositions.pikemenPositions.size() + soldierPositions.swordsmenPositions.size());
-			soldiers.addAll(soldierPositions.bowmenPositions);
-			soldiers.addAll(soldierPositions.pikemenPositions);
-			soldiers.addAll(soldierPositions.swordsmenPositions);
-			parent.sendTroopsTo(soldiers, targetDoor, soldiersWithOrders, EMoveToType.DEFAULT);
-		}
-	}
-
 	// how strongly a defended target is avoided when picking what to attack, expressed in "tiles of extra detour" per defender / per manned tower
 	private static final int TARGET_OCCUPIED_TOWER_WEIGHT = 30;
 	private static final int TARGET_DEFENDER_WEIGHT = 15;
@@ -231,6 +213,19 @@ public abstract class SimpleStrategy extends ArmyModule {
 	private static final int TARGET_SCORE_JITTER = 12;
 
 	protected ShortPoint2D getTargetEnemyDoorToAttack(IPlayer enemyToAttack) {
+		ShortPoint2D targetBuilding = getTargetEnemyBuildingToAttack(enemyToAttack);
+		if (targetBuilding == null) {
+			return null;
+		}
+		return parent.aiStatistics.getBuildingAt(targetBuilding).getDoor();
+	}
+
+	/**
+	 * Picks the enemy military building to assault (its map position, not its door). Split out from
+	 * {@link #getTargetEnemyDoorToAttack(IPlayer)} so the attack strategy can remember the committed target across heavy
+	 * ticks (to detect once it has been captured or destroyed) instead of re-randomising a fresh soft target every tick.
+	 */
+	protected ShortPoint2D getTargetEnemyBuildingToAttack(IPlayer enemyToAttack) {
 		List<ShortPoint2D> myMilitaryBuildings = parent.aiStatistics.getBuildingPositionsOfTypesForPlayer(EBuildingType.MILITARY_BUILDINGS, parent.getPlayerId());
 		if (myMilitaryBuildings.isEmpty()) {
 			return null;
@@ -263,8 +258,7 @@ public abstract class SimpleStrategy extends ArmyModule {
 				topCandidates.add(position);
 			}
 		}
-		ShortPoint2D chosen = topCandidates.get(MatchConstants.aiRandom().nextInt(topCandidates.size()));
-		return parent.aiStatistics.getBuildingAt(chosen).getDoor();
+		return topCandidates.get(MatchConstants.aiRandom().nextInt(topCandidates.size()));
 	}
 
 	private int targetScore(ShortPoint2D buildingPosition, ShortPoint2D myBase, List<ShortPoint2D> enemySoldiers) {
@@ -294,6 +288,18 @@ public abstract class SimpleStrategy extends ArmyModule {
 
 		int getSoldiersCount() {
 			return swordsmenPositions.size() + bowmenPositions.size() + pikemenPositions.size();
+		}
+
+		List<ShortPoint2D> getSwordsmenPositions() {
+			return swordsmenPositions;
+		}
+
+		List<ShortPoint2D> getBowmenPositions() {
+			return bowmenPositions;
+		}
+
+		List<ShortPoint2D> getPikemenPositions() {
+			return pikemenPositions;
 		}
 
 
