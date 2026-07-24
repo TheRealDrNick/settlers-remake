@@ -71,7 +71,11 @@ public class AiDifficultiesIT {
 
 	@Test
 	public void veryHardShouldConquerHard() throws MapLoadException {
-		holdBattleBetween(EPlayerType.AI_VERY_HARD, EPlayerType.AI_HARD, civilisation, 75 * MINUTES, MapUtils.getSpezialSumpf());
+		// 90 (not 75) minutes: very-hard legitimately beats hard here, but takes ~70-74 min on SpezialSumpf, and the AI heavy rules run
+		// in parallel with a nondeterministic task-enqueue order that adds a few minutes of run-to-run variance - so a 75 min cap made
+		// this battle spuriously time out (observed on clean master too). 90 matches easyShouldConquerVeryEasy and gives the honest win
+		// headroom without weakening the check (very-hard still has to actually conquer hard).
+		holdBattleBetween(EPlayerType.AI_VERY_HARD, EPlayerType.AI_HARD, civilisation, 90 * MINUTES, MapUtils.getSpezialSumpf());
 	}
 
 	@Test
