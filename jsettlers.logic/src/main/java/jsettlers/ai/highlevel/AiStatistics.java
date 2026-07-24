@@ -115,6 +115,13 @@ public class AiStatistics {
 	private final ExecutorService statisticsUpdaterPool;
 	private final Set<Callable<Void>> parallelStatisticsUpdater;
 
+	// Per-tick caches for the colonization beachhead test in {@link #isBuildablePartitionForPlayer}. Both are populated lazily during
+	// {@link #playerLandMapStatUpdater()} (its single Callable is the only reader/writer) and are cleared at the start of every
+	// {@link #updateStatistics()} so results never leak across ticks. Keying the sea-reachability result by partition id means the bounded
+	// sea search runs at most once per off-home partition per tick instead of once per tile.
+	private final Map<Byte, ShortPoint2D> homeCoastWaterByPlayer = new HashMap<>();
+	private final Map<Integer, Boolean> seaReachableBeachheadByPartition = new HashMap<>();
+
 	public AiStatistics(MainGrid mainGrid, ExecutorService threadPool) {
 		this.mainGrid = mainGrid;
 		buildings = Building.getAllBuildings();
@@ -158,6 +165,8 @@ public class AiStatistics {
 		defaultPartitionResources.clear();
 		sortedRiversInDefaultPartition.clear();
 		sortedCuttableObjectsInDefaultPartition.clear();
+		homeCoastWaterByPlayer.clear();
+		seaReachableBeachheadByPartition.clear();
 		for (AiPositions xCoordinatesMap : sortedResourceTypes) {
 			xCoordinatesMap.clear();
 		}
@@ -311,12 +320,92 @@ public class AiStatistics {
 				Player player = partitionsGrid.getPlayerAt(x, y);
 				if(player == null) continue;
 
-				if (partitionsGrid.getPartitionIdAt(x, y) == playerStatistics[player.playerId].partitionIdToBuildOn) {
+				if (isBuildablePartitionForPlayer(x, y, player.playerId, playerStatistics[player.playerId])) {
 					updatePlayerLand(x, y, player);
 				}
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * Decides whether a tile the player owns counts as buildable land for that player. Historically the AI modelled every player as owning a
+	 * single partition ({@link PlayerStatistic#partitionIdToBuildOn}, the partition of its first tower/castle) and only that partition was
+	 * buildable. Cross-water colonization (Phase 1) lets the player claim a beachhead on a <em>different</em> landmass; Phase 2 must recognise
+	 * that beachhead as buildable so an outpost can be raised there.
+	 * <p>
+	 * A tile is buildable if it is on the home partition (the original behaviour) or if it is a genuine cross-water colonization beachhead:
+	 * a walkable tile the player owns that lies on a landmass which is <b>not reachable by land</b> from the player's base <em>and</em> whose
+	 * coast is <b>reachable by ship</b> from the player's home coast (i.e. it was, or could have been, reached by ferry).
+	 * <p>
+	 * <b>Inertness.</b> The sea-reachability requirement is what keeps this inert on non-island maps. On a single-landmass land map every owned
+	 * tile is on {@code partitionIdToBuildOn}, so the first branch returns immediately. The harder case is a map like the difficulty-test map
+	 * {@code SpezialSumpf}, where impassable swamp can split a player's own home landmass into several <em>land</em> partitions: such secondary
+	 * partition tiles are walkable and are not land-reachable from the base (swamp blocks the path), so a naive beachhead test would wrongly
+	 * flag them as buildable. A swamp-split partition is <b>not</b> reachable across a navigable sea from the home coast (swamp is not a sea
+	 * partition and is blocked for ships), so {@link #isSeaReachableBeachheadPartition} returns false and the branch does not fire. It fires
+	 * only for a partition whose coast a ship can actually sail to from home - which requires navigable ocean between it and the base, i.e. a
+	 * real island beachhead, impossible on a single-landmass or sealess map.
+	 */
+	private boolean isBuildablePartitionForPlayer(int x, int y, byte playerId, PlayerStatistic playerStatistic) {
+		if (partitionsGrid.getPartitionIdAt(x, y) == playerStatistic.partitionIdToBuildOn) {
+			return true; // home partition - original, unchanged behaviour
+		}
+		ShortPoint2D reference = playerStatistic.referencePosition;
+		if (reference == null) {
+			return false; // no base yet, so "across water" is undefined
+		}
+		// only consider walkable owned tiles on a landmass the base cannot reach by land. Restricting to walkable tiles keeps the landmass
+		// comparison well-defined (isReachable treats blocked tiles as unreachable) and matches the old behaviour for blocked tiles.
+		if (landscapeGrid.isBlockedFor(x, y, false) || landscapeGrid.isReachable(x, y, reference.x, reference.y, false)) {
+			return false;
+		}
+		// a land-unreachable owned tile is only a genuine cross-water beachhead if a ship can reach its coast from the player's home coast.
+		// This excludes home-landmass partitions cut off by impassable (non-navigable) terrain such as swamp.
+		return isSeaReachableBeachheadPartition(x, y, playerId);
+	}
+
+	/**
+	 * @return whether the off-home partition containing {@code (x, y)} has a coast reachable by ship from the player's home coast. Memoized
+	 *         per partition id for the current tick, so the bounded sea search runs at most once per partition. The first tile of a partition
+	 *         reached by the deterministic {@link #playerLandMapStatUpdater()} scan (lowest x, then lowest y) is used as the representative.
+	 */
+	private boolean isSeaReachableBeachheadPartition(int x, int y, byte playerId) {
+		int partitionId = partitionsGrid.getPartitionIdAt(x, y);
+		Boolean cached = seaReachableBeachheadByPartition.get(partitionId);
+		if (cached != null) {
+			return cached;
+		}
+		ShortPoint2D homeCoastWater = homeCoastWaterFromReference(playerId);
+		boolean reachable = homeCoastWater != null && findSeaReachableLandingNear(new ShortPoint2D(x, y), homeCoastWater) != null;
+		seaReachableBeachheadByPartition.put(partitionId, reachable);
+		return reachable;
+	}
+
+	/**
+	 * Like {@link #findHomeCoastWaterFor(byte)} but derived from the <b>stable</b> {@link PlayerStatistic#referencePosition} rather than from
+	 * {@code getLandForPlayer}, which is still being populated while {@link #playerLandMapStatUpdater()} runs and would give an incomplete,
+	 * update-order-dependent answer. Finds the nearest navigable-water (sea-partition) tile to the reference within a bounded radius. Memoized
+	 * per player for the current tick.
+	 *
+	 * @return the notional home embarkation water tile, or null if the player has no navigable coast within range.
+	 */
+	private ShortPoint2D homeCoastWaterFromReference(byte playerId) {
+		if (homeCoastWaterByPlayer.containsKey(playerId)) {
+			return homeCoastWaterByPlayer.get(playerId); // cached value may itself be null
+		}
+		ShortPoint2D reference = playerStatistics[playerId].referencePosition;
+		ShortPoint2D result = null;
+		if (reference != null) {
+			result = HexGridArea.stream(reference.x, reference.y, 0, COLONIZATION_HOME_COAST_SEARCH_RADIUS)
+					.filterBounds(mainGrid.getWidth(), mainGrid.getHeight())
+					.filter((wx, wy) -> landscapeGrid.getLandscapeTypeAt(wx, wy).isWater)
+					.filter((wx, wy) -> !landscapeGrid.isBlockedFor(wx, wy, true)) // must be a navigable sea partition, not a landlocked pond
+					.getFirst()
+					.orElse(null);
+		}
+		homeCoastWaterByPlayer.put(playerId, result);
+		return result;
 	}
 
 	private Void pioneerMapStatUpdater() {
@@ -815,6 +904,8 @@ public class AiStatistics {
 
 	// how far around an off-shore ore tile to look for a water tile a ferry could land next to (mirrors NavalInvasionModule)
 	private static final int COLONIZATION_LANDING_SEARCH_RADIUS = 20;
+	// how far around the (stable) reference position to look for the player's navigable home coast in the beachhead buildability test
+	private static final int COLONIZATION_HOME_COAST_SEARCH_RADIUS = 40;
 	// weight applied to the summed raw resource amount of a reachable deposit when turning it into a "gain" score
 	private static final double COLONIZATION_ORE_GAIN_WEIGHT = 1.0;
 	// extra multiplier for a resource the home partition currently has none of, so scarce ore is chased more eagerly
