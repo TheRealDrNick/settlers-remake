@@ -2,6 +2,7 @@
 <!DOCTYPE building SYSTEM "../building.dtd" >
 <building worker="DOCKWORKER">
     <ground groundtype="GRASS" />
+    <ground groundtype="SAND"/>
 	<ground groundtype="EARTH" />
 	<ground groundtype="FLATTENED" />
 
