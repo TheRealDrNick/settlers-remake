@@ -9,6 +9,7 @@ import jsettlers.common.ai.EPlayerType;
 import jsettlers.common.material.EMaterialType;
 import jsettlers.common.movable.EMovableType;
 import jsettlers.common.movable.ESoldierType;
+import jsettlers.common.player.IInGamePlayer;
 import jsettlers.common.player.IPlayer;
 import jsettlers.common.position.ShortPoint2D;
 import jsettlers.input.tasks.MoveToGuiTask;
@@ -190,5 +191,31 @@ public class ArmyFramework {
 
 	AiPositions getEnemiesInTown() {
 		return aiStatistics.getEnemiesInTownOf(player.getPlayerId());
+	}
+
+	/**
+	 * Shared "committed body is clearly losing and should break off" test, used by both the MAIN assault
+	 * ({@link SimpleAttackStrategy}) and the DETACHED harassment raid ({@link HarassmentModule}). A committed force is losing once its
+	 * combat-strength-weighted power, after the personality/difficulty aggression margin, has fallen below {@code abortPowerRatio} of the
+	 * opposing force's power. It is deliberately coarse (it mirrors the launch estimate) and forms one end of a wide dead-band: a body is
+	 * launched on a modest edge and only pulled back once it is CLEARLY beaten, so groups still see close fights through instead of fleeing
+	 * at the first casualty.
+	 * <p>
+	 * The caller supplies {@code enemyForceCount} so the SAME test can be applied at the right scale: the main assault passes the enemy's
+	 * whole army (it is a global front), while a small detached raid passes only the LOCAL defenders around its squad - otherwise a handful
+	 * of raiders would read the enemy's entire army as overwhelming and never dare to raid at all.
+	 *
+	 * @param enemy           the enemy the body is fighting (used for its combat-strength bonus)
+	 * @param ourForceCount   number of our soldiers still in the committed body
+	 * @param enemyForceCount number of opposing soldiers to weigh against (whole army for the main assault, local defenders for a raid)
+	 * @param aggressionFactor personality/difficulty margin (a higher value presses on longer before breaking off)
+	 * @param abortPowerRatio the fraction of the enemy's power below which we are considered clearly beaten
+	 */
+	boolean isCommittedForceLosing(IPlayer enemy, int ourForceCount, int enemyForceCount, float aggressionFactor, float abortPowerRatio) {
+		float ourStrength = player.getCombatStrengthInformation().getCombatStrength(false);
+		float enemyStrength = enemy instanceof IInGamePlayer ? ((IInGamePlayer) enemy).getCombatStrengthInformation().getCombatStrength(false) : 1f;
+		float ourPower = ourForceCount * ourStrength;
+		float enemyPower = enemyForceCount * enemyStrength;
+		return ourPower * aggressionFactor < enemyPower * abortPowerRatio;
 	}
 }

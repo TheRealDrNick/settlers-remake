@@ -3,7 +3,6 @@ package jsettlers.ai.army;
 import jsettlers.common.CommonConstants;
 import jsettlers.common.action.EMoveToType;
 import jsettlers.common.movable.EMovableType;
-import jsettlers.common.player.IInGamePlayer;
 import jsettlers.common.player.IPlayer;
 import jsettlers.common.position.ShortPoint2D;
 import jsettlers.logic.buildings.Building;
@@ -174,11 +173,10 @@ public class SimpleAttackStrategy extends SimpleStrategy {
 	 *         cautious one, mirroring how they launch.
 	 */
 	private boolean isCommittedAssaultLosing() {
-		float ourStrength = parent.getPlayer().getCombatStrengthInformation().getCombatStrength(false);
-		float enemyStrength = committedEnemy instanceof IInGamePlayer ? ((IInGamePlayer) committedEnemy).getCombatStrengthInformation().getCombatStrength(false) : 1f;
-		float ourPower = committedSoldiers.size() * ourStrength;
-		float enemyPower = parent.aiStatistics.getCountOfMovablesOfPlayer(committedEnemy, EMovableType.SOLDIERS) * enemyStrength;
-		return ourPower * attackerCountFactor < enemyPower * ABORT_POWER_RATIO;
+		// the main assault is a global front, so it weighs itself against the enemy's whole army. Delegates to the shared
+		// ArmyFramework helper (also used by the detached harassment raid) so the two bodies use exactly the same abort test.
+		int enemyArmy = parent.aiStatistics.getCountOfMovablesOfPlayer(committedEnemy, EMovableType.SOLDIERS);
+		return parent.isCommittedForceLosing(committedEnemy, committedSoldiers.size(), enemyArmy, attackerCountFactor, ABORT_POWER_RATIO);
 	}
 
 	private void clearCommitment() {

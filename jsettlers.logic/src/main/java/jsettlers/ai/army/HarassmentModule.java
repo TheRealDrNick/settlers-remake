@@ -16,9 +16,11 @@ package jsettlers.ai.army;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import jsettlers.ai.highlevel.AiStatistics;
 import jsettlers.common.CommonConstants;
 import jsettlers.common.action.EMoveToType;
 import jsettlers.common.buildings.EBuildingType;
@@ -27,6 +29,7 @@ import jsettlers.common.player.IPlayer;
 import jsettlers.common.position.ShortPoint2D;
 import jsettlers.logic.buildings.Building;
 import jsettlers.logic.constants.MatchConstants;
+import jsettlers.logic.movable.MovableManager;
 import jsettlers.logic.movable.interfaces.ILogicMovable;
 
 /**
@@ -38,6 +41,14 @@ import jsettlers.logic.movable.interfaces.ILogicMovable;
  * peels off just a small squad, respects the opening grace period, and fires only probabilistically (scaled by the play style's
  * {@link jsettlers.ai.highlevel.EAiPlayStyle#harassChance}). All randomness uses the synchronised game RNG, so multiplayer/replays stay
  * deterministic. It runs before {@link SimpleAttackStrategy} so its squad is reserved out of the main assault.
+ * <p>
+ * Once a raid is launched the squad becomes a <em>committed detached body</em>, mirroring {@link SimpleAttackStrategy}'s committed
+ * assault: it keeps pressing the SAME soft target across heavy ticks and is only broken off once it is CLEARLY losing its local fight -
+ * at which point it is unregistered and {@link RegroupArmyModule} (which runs after us) walks the survivors back to the nearest friendly
+ * military building, i.e. a retreat rather than a fight to the last man. This stops a probing squad from feeding itself into a garrison it
+ * blundered into, while the wide "launch on a modest edge, abort only when clearly beaten" dead-band means winnable skirmishes are still
+ * pressed. All of this only ever runs for a squad that was launched through the gated path below, so where the module was inert before it
+ * stays inert.
  *
  * @author jsettlers behaviour AI
  */
@@ -53,7 +64,26 @@ public class HarassmentModule extends ArmyModule {
 	// buildings scoring within this margin of the softest are treated as equally raidable and chosen between at random (unpredictability)
 	private static final int SOFTNESS_JITTER = 4;
 
+	// --- break-off hysteresis for the detached raid (mirrors SimpleAttackStrategy's committed-assault dead-band) ---
+	// Break off once the squad's combat-strength-weighted power, after the personality margin, has fallen below this fraction of the LOCAL
+	// defenders' power. NOTE: unlike the main assault (which weighs itself against the enemy's whole army), a raid weighs itself only against
+	// the defenders physically around it - a 4-man squad compared to the enemy's entire army would read as doomed before it even set out.
+	private static final float ABORT_POWER_RATIO = 0.5f;
+	// also break off once the squad has been ground down past this fraction of the force it set out with (survivors retreat, not die to a man)
+	private static final float FORCE_FLOOR_RATIO = 0.34f;
+	// enemy soldiers within this distance of the squad's centre count as the local force fighting it (coarse, like the launch estimate)
+	private static final int LOCAL_DEFENDER_RADIUS = 12;
+	// a squad member this close to the target door is treated as engaged and is not re-nudged (mirrors SimpleAttackStrategy.ENGAGED_DISTANCE)
+	private static final float ENGAGED_DISTANCE = CommonConstants.TOWER_RADIUS;
+
 	private final byte playerId;
+
+	// --- committed raid state (empty whenever no raid is in progress) ---
+	private final Set<Integer> raidingSquad = new HashSet<>();
+	private int raidInitialForce;
+	private IPlayer raidEnemy;
+	private ShortPoint2D raidTargetBuilding; // building position (not door) so we can detect capture / destruction
+	private ShortPoint2D raidTargetDoor;
 
 	public HarassmentModule(ArmyFramework parent) {
 		super(parent);
@@ -66,6 +96,11 @@ public class HarassmentModule extends ArmyModule {
 
 	@Override
 	public void applyHeavyRules(Set<Integer> soldiersWithOrders) {
+		if (!raidingSquad.isEmpty()) {
+			updateRaid(soldiersWithOrders);
+			return; // while a raid is in progress this module manages that squad and does not peel off a new one
+		}
+
 		if (!parent.usesAdvancedTactics()) {
 			return; // only the higher difficulties probe with harassment raids; easier AIs play a plain, predictable game
 		}
@@ -93,15 +128,130 @@ public class HarassmentModule extends ArmyModule {
 			return;
 		}
 
-		ShortPoint2D targetDoor = pickSoftTargetDoor(enemy);
-		if (targetDoor == null) {
+		ShortPoint2D targetBuilding = pickSoftTarget(enemy);
+		if (targetBuilding == null) {
+			return;
+		}
+		Building building = parent.aiStatistics.getBuildingAt(targetBuilding);
+		if (building == null) {
+			return;
+		}
+		ShortPoint2D targetDoor = building.getDoor();
+
+		// send the closest few idle soldiers as the raiding squad, and remember them as a committed detached body
+		idleSoldiers.sort(Comparator.comparingInt(position -> position.getOnGridDistTo(targetDoor)));
+		List<ShortPoint2D> squad = new ArrayList<>(idleSoldiers.subList(0, Math.min(SQUAD_SIZE, idleSoldiers.size())));
+		launchRaid(enemy, targetBuilding, targetDoor, squad, soldiersWithOrders);
+	}
+
+	/** Launches (and records) a committed raid: capture exactly the soldiers we send so later ticks can keep them together or retreat them. */
+	private void launchRaid(IPlayer enemy, ShortPoint2D targetBuilding, ShortPoint2D targetDoor, List<ShortPoint2D> squad, Set<Integer> soldiersWithOrders) {
+		raidingSquad.clear();
+		for (ShortPoint2D position : squad) {
+			ILogicMovable movable = parent.movableGrid.getMovableAt(position.x, position.y);
+			if (movable != null) {
+				raidingSquad.add(movable.getID());
+			}
+		}
+		if (raidingSquad.isEmpty()) {
+			return;
+		}
+		raidEnemy = enemy;
+		raidTargetBuilding = targetBuilding;
+		raidTargetDoor = targetDoor;
+		raidInitialForce = raidingSquad.size();
+		parent.sendTroopsToById(new ArrayList<>(raidingSquad), targetDoor, soldiersWithOrders, EMoveToType.DEFAULT);
+	}
+
+	/**
+	 * Advances an in-progress raid: drops squad members that died or were re-tasked, breaks the raid off when the target is gone, the squad
+	 * is spent, or the local fight is clearly lost, and otherwise keeps the squad pressing the SAME target.
+	 */
+	private void updateRaid(Set<Integer> soldiersWithOrders) {
+		// drop squad members that died / vanished
+		raidingSquad.removeIf(id -> {
+			ILogicMovable m = MovableManager.getMovableByID(id);
+			return m == null || !m.isAlive();
+		});
+		// release members an earlier module this tick has already claimed (e.g. the defence pulling one home for a real intrusion); this
+		// naturally shrinks the raid rather than two modules fighting over the same soldier, and may itself trip the force floor below.
+		raidingSquad.removeAll(soldiersWithOrders);
+
+		if (raidingSquad.isEmpty() || raidEnemy == null || !parent.existsAliveEnemy()) {
+			clearRaid();
 			return;
 		}
 
-		// send the closest few idle soldiers as the raiding squad
-		idleSoldiers.sort(Comparator.comparingInt(position -> position.getOnGridDistTo(targetDoor)));
-		List<ShortPoint2D> squad = new ArrayList<>(idleSoldiers.subList(0, Math.min(SQUAD_SIZE, idleSoldiers.size())));
-		parent.sendTroopsTo(squad, targetDoor, soldiersWithOrders, EMoveToType.DEFAULT);
+		Building target = parent.aiStatistics.getBuildingAt(raidTargetBuilding);
+		boolean targetLost = target == null || !target.isConstructionFinished()
+				|| target.getPlayer() == null || target.getPlayer().getPlayerId() != raidEnemy.getPlayerId();
+		boolean forceDepleted = raidingSquad.size() < Math.max(1, raidInitialForce * FORCE_FLOOR_RATIO);
+		boolean losing = isRaidLosing();
+
+		if (targetLost || forceDepleted || losing) {
+			// break off: forget the raid and do NOT re-register the squad. The survivors are then free, so RegroupArmyModule (which runs
+			// after us) walks them back to the nearest friendly military building - a retreat, exactly like SimpleAttackStrategy's abort.
+			clearRaid();
+			return;
+		}
+
+		// keep pressing the STABLE target: register the squad so RegroupArmyModule leaves it alone, and nudge any members that have fallen
+		// behind back onto the target (members already engaged at the target are left to fight rather than re-ordered).
+		soldiersWithOrders.addAll(raidingSquad);
+		List<Integer> stragglers = new ArrayList<>();
+		for (Integer id : raidingSquad) {
+			ILogicMovable m = MovableManager.getMovableByID(id);
+			if (m != null && m.getPosition().getOnGridDistTo(raidTargetDoor) > ENGAGED_DISTANCE) {
+				stragglers.add(id);
+			}
+		}
+		if (!stragglers.isEmpty()) {
+			parent.sendTroopsToById(stragglers, raidTargetDoor, soldiersWithOrders, EMoveToType.DEFAULT);
+		}
+	}
+
+	/**
+	 * @return true when the raiding squad is clearly losing its LOCAL fight - its power has fallen below {@link #ABORT_POWER_RATIO} of the
+	 *         enemy soldiers gathered around it. Routes through the shared {@link ArmyFramework#isCommittedForceLosing} test (the same one
+	 *         the main assault uses) and is flavoured by the play style's aggression so a bolder personality presses on a little longer.
+	 */
+	private boolean isRaidLosing() {
+		return parent.isCommittedForceLosing(raidEnemy, raidingSquad.size(), countLocalDefenders(),
+				parent.getPlayStyle().aggressionFactor, ABORT_POWER_RATIO);
+	}
+
+	/** Counts the enemy soldiers gathered within {@link #LOCAL_DEFENDER_RADIUS} of the squad's centre - the force actually fighting it. */
+	private int countLocalDefenders() {
+		ShortPoint2D center = squadCenter();
+		if (center == null) {
+			return 0;
+		}
+		int count = 0;
+		for (ShortPoint2D soldier : parent.aiStatistics.getPositionsOfMovablesWithTypesForPlayer(raidEnemy.getPlayerId(), EMovableType.SOLDIERS)) {
+			if (soldier.getOnGridDistTo(center) <= LOCAL_DEFENDER_RADIUS) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	private ShortPoint2D squadCenter() {
+		List<ShortPoint2D> positions = new ArrayList<>();
+		for (Integer id : raidingSquad) {
+			ILogicMovable m = MovableManager.getMovableByID(id);
+			if (m != null) {
+				positions.add(m.getPosition());
+			}
+		}
+		return positions.isEmpty() ? null : AiStatistics.calculateAveragePointFromList(positions);
+	}
+
+	private void clearRaid() {
+		raidingSquad.clear();
+		raidEnemy = null;
+		raidTargetBuilding = null;
+		raidTargetDoor = null;
+		raidInitialForce = 0;
 	}
 
 	private boolean isWithinAttackGracePeriod() {
@@ -127,10 +277,11 @@ public class HarassmentModule extends ArmyModule {
 	}
 
 	/**
-	 * Picks the door of a lightly defended, reachable enemy military building to raid - preferring unmanned towers and buildings with few
-	 * nearby defenders, chosen at random among the softest candidates for unpredictability.
+	 * Picks a lightly defended, reachable enemy military building to raid - preferring unmanned towers and buildings with few nearby
+	 * defenders, chosen at random among the softest candidates for unpredictability. Returns the building position (not the door) so the
+	 * committed raid can detect once the building has been captured or destroyed.
 	 */
-	private ShortPoint2D pickSoftTargetDoor(IPlayer enemy) {
+	private ShortPoint2D pickSoftTarget(IPlayer enemy) {
 		List<ShortPoint2D> reachableBuildings = new ArrayList<>();
 		for (ShortPoint2D position : parent.aiStatistics.getBuildingPositionsOfTypesForPlayer(EBuildingType.MILITARY_BUILDINGS, enemy.getPlayerId())) {
 			Building building = parent.aiStatistics.getBuildingAt(position);
@@ -153,8 +304,7 @@ public class HarassmentModule extends ArmyModule {
 				softCandidates.add(position);
 			}
 		}
-		ShortPoint2D chosen = softCandidates.get(MatchConstants.aiRandom().nextInt(softCandidates.size()));
-		return parent.aiStatistics.getBuildingAt(chosen).getDoor();
+		return softCandidates.get(MatchConstants.aiRandom().nextInt(softCandidates.size()));
 	}
 
 	private int softnessScore(ShortPoint2D buildingPosition, List<ShortPoint2D> enemySoldiers) {
