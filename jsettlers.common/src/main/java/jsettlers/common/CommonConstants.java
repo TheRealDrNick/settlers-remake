@@ -110,6 +110,14 @@ public abstract class CommonConstants {
 	 */
 	public static boolean DISABLE_ORIGINAL_MAPS_CHECKSUM = false;
 
+	/**
+	 * When true, the AI runs its per-player light/heavy rules and its statistics updaters SEQUENTIALLY in a fixed (player id / listed) order
+	 * instead of concurrently on a work-stealing pool. Concurrent execution enqueues GUI tasks in a nondeterministic order, which makes AI
+	 * game outcomes vary run-to-run; sequential execution makes them reproducible. Default false (production keeps the faster parallel path);
+	 * integration tests that need a deterministic AI (e.g. ColonizationIT) set it to true.
+	 */
+	public static boolean DETERMINISTIC_AI = false;
+
 	public static Supplier<Boolean> PLAYALL_MUSIC = () -> false;
 
 	public static Supplier<Float> MUSIC_VOLUME = () -> 1f;

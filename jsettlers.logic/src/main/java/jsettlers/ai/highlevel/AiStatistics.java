@@ -113,7 +113,7 @@ public class AiStatistics {
 	private final List<Player> players;
 
 	private final ExecutorService statisticsUpdaterPool;
-	private final Set<Callable<Void>> parallelStatisticsUpdater;
+	private final List<Callable<Void>> parallelStatisticsUpdater;
 
 	// Per-tick caches for the colonization beachhead test in {@link #isBuildablePartitionForPlayer}. Both are populated lazily during
 	// {@link #playerLandMapStatUpdater()} (its single Callable is the only reader/writer) and are cleared at the start of every
@@ -146,7 +146,8 @@ public class AiStatistics {
 		players = Arrays.stream(partitionsGrid.getPlayers()).filter(Objects::nonNull).collect(Collectors.toList());
 
 		statisticsUpdaterPool = threadPool;
-		parallelStatisticsUpdater = Set.of(this::mainMapStatUpdater, this::freeLandMapStatUpdater, this::playerLandMapStatUpdater, this::movableMapStatUpdater, this::surfaceMapStatUpdater, this::pioneerMapStatUpdater);
+		// List (not Set) so the iteration/execution order is fixed - Set.of has a per-JVM-randomized order, another source of AI nondeterminism.
+		parallelStatisticsUpdater = List.of(this::mainMapStatUpdater, this::freeLandMapStatUpdater, this::playerLandMapStatUpdater, this::movableMapStatUpdater, this::surfaceMapStatUpdater, this::pioneerMapStatUpdater);
 	}
 
 	public byte getFlatternEffortAtPositionForBuilding(final ShortPoint2D position, final BuildingVariant buildingType) {
@@ -432,10 +433,21 @@ public class AiStatistics {
 	private void updateMapStatistics() {
 		updatePartitionIdsToBuildOn();
 
-		try {
-			statisticsUpdaterPool.invokeAll(parallelStatisticsUpdater);
-		} catch (InterruptedException e) {
-			e.printStackTrace();
+		if (CommonConstants.DETERMINISTIC_AI) {
+			// sequential, fixed order -> reproducible statistics (see CommonConstants.DETERMINISTIC_AI)
+			for (Callable<Void> updater : parallelStatisticsUpdater) {
+				try {
+					updater.call();
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			}
+		} else {
+			try {
+				statisticsUpdaterPool.invokeAll(parallelStatisticsUpdater);
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
 		}
 	}
 

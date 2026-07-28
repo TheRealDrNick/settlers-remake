@@ -20,6 +20,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import jsettlers.common.CommonConstants;
 import jsettlers.common.logging.StatisticsStopWatch;
 import jsettlers.logic.constants.MatchConstants;
 import jsettlers.logic.map.grid.MainGrid;
@@ -86,11 +87,7 @@ public class AiExecutor implements INetworkTimerable {
 	public void timerEvent() {
 		// every second
 		applyLightRulesStopWatch.restart();
-		try {
-			statisticsUpdaterPool.invokeAll(lightWhatToDoAis);
-		} catch (InterruptedException e) {
-			e.printStackTrace();
-		}
+		runRules(lightWhatToDoAis);
 		applyLightRulesStopWatch.stop("computerplayer:applyLightRules()");
 
 		// every ten seconds
@@ -100,12 +97,31 @@ public class AiExecutor implements INetworkTimerable {
 			updateStatisticsStopWatch.stop("computerplayer:updateStatistics()");
 
 			applyHeavyRulesStopWatch.restart();
+			runRules(heavyWhatToDoAis);
+			applyHeavyRulesStopWatch.stop("computerplayer:applyHeavyRules()");
+		}
+	}
+
+	/**
+	 * Runs the given per-player AI rules. In {@link CommonConstants#DETERMINISTIC_AI} mode they run SEQUENTIALLY in list order (which is
+	 * player-id order), so the GUI tasks they enqueue are ordered deterministically and AI outcomes are reproducible; otherwise they run
+	 * concurrently on the work-stealing pool (faster, production default).
+	 */
+	private void runRules(List<Callable<Void>> rules) {
+		if (CommonConstants.DETERMINISTIC_AI) {
+			for (Callable<Void> rule : rules) {
+				try {
+					rule.call();
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			}
+		} else {
 			try {
-				statisticsUpdaterPool.invokeAll(heavyWhatToDoAis);
+				statisticsUpdaterPool.invokeAll(rules);
 			} catch (InterruptedException e) {
 				e.printStackTrace();
 			}
-			applyHeavyRulesStopWatch.stop("computerplayer:applyHeavyRules()");
 		}
 	}
 

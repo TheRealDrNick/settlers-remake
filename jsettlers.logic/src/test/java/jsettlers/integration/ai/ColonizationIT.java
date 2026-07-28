@@ -70,6 +70,7 @@ public class ColonizationIT {
 		CommonConstants.ENABLE_CONSOLE_LOGGING = true;
 		Constants.FOG_OF_WAR_DEFAULT_ENABLED = false;
 		CommonConstants.DISABLE_ORIGINAL_MAPS_CHECKSUM = true; // the extracted original .map may not carry the S3 checksum
+		CommonConstants.DETERMINISTIC_AI = true; // run the AI sequentially so this long emergent pipeline is reproducible run-to-run
 		TestUtils.setupTempResourceManager();
 	}
 
