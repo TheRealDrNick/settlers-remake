@@ -26,6 +26,7 @@ import jsettlers.common.buildings.EBuildingType;
 import jsettlers.common.map.shapes.HexGridArea;
 import jsettlers.common.movable.EMovableType;
 import jsettlers.common.movable.EShipType;
+import jsettlers.common.movable.IGraphicsMovable;
 import jsettlers.common.player.IPlayer;
 import jsettlers.common.position.ShortPoint2D;
 import jsettlers.input.tasks.EGuiAction;
@@ -140,6 +141,13 @@ public class NavalInvasionModule extends ArmyModule {
 		}
 
 		for (IFerryMovable ferry : ferries) {
+			// leave ferries carrying colonization pioneers alone: the ColonizationModule uses the same shared ferry pool, and if we treat its
+			// pioneer-laden ferry as one of ours we hijack it - sending it toward the enemy landing (and eventually unloading the pioneers there),
+			// so its squad never assembles and it never reaches the ore landing. The ColonizationModule already reciprocally skips our soldier
+			// ferries (see ColonizationModule.pickColonizationFerry), so this makes the two modules cooperatively partition the ferry pool.
+			if (carriesColonizationPioneer(ferry)) {
+				continue;
+			}
 			// note: we must NOT pre-add the ferry id to soldiersWithOrders here - sendTroopsToById() strips ids that are already in
 			// that set, which would cancel the ferry's own move order. Ferries are never commanded by the other army modules anyway.
 			ShortPoint2D ferryPosition = ferry.getPosition();
@@ -329,6 +337,16 @@ public class NavalInvasionModule extends ArmyModule {
 			}
 		}
 		return result;
+	}
+
+	/** @return whether this ferry is carrying at least one pioneer, i.e. it has been claimed by the ColonizationModule and must not be hijacked. */
+	private boolean carriesColonizationPioneer(IFerryMovable ferry) {
+		for (IGraphicsMovable passenger : ferry.getPassengers()) {
+			if (passenger.getMovableType() == EMovableType.PIONEER) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private List<IFerryMovable> findFriendlyFerries() {
