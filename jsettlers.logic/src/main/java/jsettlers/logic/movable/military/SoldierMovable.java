@@ -44,6 +44,13 @@ public abstract class SoldierMovable extends AttackableHumanMovable implements I
 	private IAttackable toCloseEnemy;
 	private ShortPoint2D startPoint;
 
+	// Human-player pursuit leash: a soldier that auto-engages a nearby enemy remembers where it started defending (defenseAnchor) and will
+	// not chase a fleeing enemy further than HUMAN_DEFENSE_LEASH_RADIUS from that spot - it breaks off and walks back to its post instead.
+	// This stops hit-and-run raiders from dragging a human player's defensive line across the map (a constant micro annoyance). Gated to the
+	// HUMAN player only, so AI-vs-AI combat (and the difficulty-regression suite) is byte-for-byte unaffected.
+	private static final int HUMAN_DEFENSE_LEASH_RADIUS = 20;
+	private ShortPoint2D defenseAnchor;
+
 
 	public SoldierMovable(AbstractMovableGrid grid, EMovableType movableType, ShortPoint2D position, Player player, Movable movable) {
 		super(grid, movableType, position, player, movable);
@@ -98,6 +105,7 @@ public abstract class SoldierMovable extends AttackableHumanMovable implements I
 						// regression suite - are byte-for-byte unaffected by this.
 						if (mov.player.getPlayerType() == EPlayerType.HUMAN) {
 							mov.enemyNearby = false;
+							mov.defenseAnchor = null; // a fresh player order repositions the soldier; drop the old defensive post
 						}
 
 						switch(mov.nextMoveToType) {
@@ -166,6 +174,18 @@ public abstract class SoldierMovable extends AttackableHumanMovable implements I
 
 									condition(mov -> !mov.enemy.isAlive()), // enemy might die even if the attack fails
 
+									// LEASH (human only): the enemy is out of attack range, so we'd have to chase. If we have already been pulled
+									// beyond the leash from where we started defending, break off and walk back to that post instead of following a
+									// hit-and-run raider across the map. (Adjacent enemies were already handled by attackEnemy() above, so this
+									// never interrupts an actual fight.)
+									guard(mov -> mov.player.getPlayerType() == EPlayerType.HUMAN && mov.defenseAnchor != null
+													&& mov.position.getOnGridDistTo(mov.defenseAnchor) > HUMAN_DEFENSE_LEASH_RADIUS,
+										action(mov -> {
+											mov.currentTarget = mov.defenseAnchor; // return to post (walked by the currentTarget guard below)
+											mov.enemyNearby = false;               // stop pursuing; we re-engage only if an enemy reaches the post again
+										})
+									),
+
 									// or roughly chase enemy
 									goInDirectionIfAllowedAndFreeNode(mov -> EDirection.getApproxDirection(mov.position, mov.enemy.getPosition())),
 									// or go to his position
@@ -198,6 +218,7 @@ public abstract class SoldierMovable extends AttackableHumanMovable implements I
 							// no enemy in sight
 							action(mov -> {
 								mov.enemyNearby = false;
+								mov.defenseAnchor = null; // combat over, no enemy remains: forget the post and re-anchor on the next engagement
 							})
 						)
 					)
@@ -332,12 +353,25 @@ public abstract class SoldierMovable extends AttackableHumanMovable implements I
 	@Override
 	public void receiveHit(float hitStrength, ShortPoint2D attackerPos, IPlayer attackingPlayer) {
 		super.receiveHit(hitStrength, attackerPos, attackingPlayer);
+		rememberDefensePostIfIdle();
 		enemyNearby = true;
 	}
 
 	@Override
 	public void informAboutAttackable(IAttackable other) {
+		rememberDefensePostIfIdle();
 		enemyNearby = true;
+	}
+
+	/**
+	 * When a HUMAN player's soldier first notices an enemy while it is not already engaged, remember its current position as the post to
+	 * return to if pursuit later drags it beyond {@link #HUMAN_DEFENSE_LEASH_RADIUS} (see the leash in the attack behaviour). AI soldiers
+	 * never record an anchor, so their behaviour - and the difficulty suite - is unaffected.
+	 */
+	private void rememberDefensePostIfIdle() {
+		if (player.getPlayerType() == EPlayerType.HUMAN && !enemyNearby && defenseAnchor == null) {
+			defenseAnchor = position;
+		}
 	}
 
 	@Override
