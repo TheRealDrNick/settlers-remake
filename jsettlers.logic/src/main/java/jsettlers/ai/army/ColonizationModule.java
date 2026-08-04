@@ -77,6 +77,8 @@ public class ColonizationModule extends ArmyModule {
 	private static final int BASE_MIN_JOBLESS_BEARER_RESERVE = 12;
 	// a colonization target must rate strictly above this to be pursued (Phase 0 score = ore_gain - ferry_cost - build_cost - defense_risk)
 	private static final double MIN_TARGET_VALUE = 0.0;
+	// cap how many deposits per resource we probe for coast-suppliability, to bound the cost when a resource has hundreds of reachable deposits
+	private static final int MAX_SUPPLIABILITY_PROBES = 40;
 
 	// which difficulties colonize at all: only the two strong AIs. Indexed by EPlayerType.ordinal():
 	// AI_VERY_EASY, AI_EASY, AI_HARD, AI_VERY_HARD, HUMAN - easy opponents and the human player never colonize across water.
@@ -126,14 +128,14 @@ public class ColonizationModule extends ArmyModule {
 
 		// gate 3 - there must be a worthwhile sea-reachable resource deposit. On maps without one this returns null every tick, so the whole
 		// module is inert below this point (no GuiTasks are ever issued).
-		ColonizationTarget target = selectColonizationTarget();
+		ColonizationTarget target = selectColonizationTarget(dockWater);
 		if (target == null) {
 			return;
 		}
 
 		// step 6 (runs first so a beachhead keeps advancing even while the next wave is still loading): pioneers already ashore walk onto the
 		// ore, claiming foreign ground on the way (PioneerMovable.workOnPosition -> grid.changePlayerAt).
-		commandBeachhead(target, soldiersWithOrders);
+		commandBeachhead(target, dockWater, soldiersWithOrders);
 
 		// step 2 - ensure a ferry exists. The dockyard builds one ship at a time and ignores extra orders, so requesting each tick is safe.
 		List<IFerryMovable> ferries = findFriendlyFerries();
@@ -143,7 +145,12 @@ public class ColonizationModule extends ArmyModule {
 		}
 		IFerryMovable ferry = pickColonizationFerry(ferries, dockWater);
 		if (ferry == null) {
-			return; // every ferry is currently carrying soldiers for the naval invasion module - do not hijack it
+			// every existing ferry is currently carrying soldiers for the naval invasion module (or empty but adrift far from home) - we will not
+			// hijack those. Instead order one more ferry so the shared pool grows until a spare is available for the pioneer squad. The dockyard
+			// builds one ship at a time and ignores extra orders, and once a spare empty-at-home ferry exists this branch stops firing, so the
+			// fleet self-limits to "just enough that colonization also gets a ferry".
+			parent.taskScheduler.scheduleTask(new OrderShipGuiTask(playerId, dockyard, EShipType.FERRY));
+			return;
 		}
 
 		int boarded = countPioneerPassengers(ferry);
@@ -157,14 +164,21 @@ public class ColonizationModule extends ArmyModule {
 				raisePioneers(SQUAD_SIZE - boarded - homePioneers.size());
 				loadPioneers(ferry, homePioneers, SQUAD_SIZE - boarded, soldiersWithOrders);
 			}
-			// step 5 - set sail once the squad is complete, or once no more pioneers can be raised or boarded (sail with what we have)
-			boolean noMoreReinforcements = homePioneers.isEmpty() && joblessBearersBeyondReserve() <= 0;
-			if (boarded >= SQUAD_SIZE || (boarded > 0 && noMoreReinforcements)) {
+			// step 5 - set sail with a full squad when we can assemble one; otherwise sail with whatever has boarded as soon as no idle pioneer is
+			// standing ready to board this cycle. We must NOT wait for a full squad indefinitely: the home economy (WhatToDoAi.commandPioneers)
+			// owns the whole pioneer pool and, once the home border is exhausted, converts every not-yet-embarked pioneer back to a bearer each
+			// tick - so the squad can never grow past the pioneer already aboard the ferry (an embarked pioneer has no grid position and is safe
+			// from that reconversion). A partial wave still advances the beachhead, and later heavy ticks keep shipping further waves that all
+			// march to the ore, so the beachhead accumulates pioneers over time even when only one boards per trip.
+			boolean noIdlePioneerReadyToBoard = homePioneers.isEmpty();
+			boolean sail = boarded >= SQUAD_SIZE || (boarded > 0 && noIdlePioneerReadyToBoard);
+			if (sail) {
 				sendFerryTo(ferry, target.landingTile, soldiersWithOrders);
 			}
 		} else if (boarded > 0) {
 			// step 5 - carrying settlers away from home: sail on and unload on arrival at the landing tile
-			if (ferryPosition.getOnGridDistTo(target.landingTile) <= FERRY_ARRIVAL_DISTANCE) {
+			boolean arrived = ferryPosition.getOnGridDistTo(target.landingTile) <= FERRY_ARRIVAL_DISTANCE;
+			if (arrived) {
 				parent.taskScheduler.scheduleTask(new MovableGuiTask(EGuiAction.UNLOAD_FERRY, playerId, listOf(ferry.getID())));
 			} else {
 				sendFerryTo(ferry, target.landingTile, soldiersWithOrders);
@@ -181,25 +195,63 @@ public class ColonizationModule extends ArmyModule {
 	 *
 	 * @return the best target with a strictly positive score, or null if none qualifies.
 	 */
-	private ColonizationTarget selectColonizationTarget() {
-		ColonizationTarget best = null;
-		double bestValue = MIN_TARGET_VALUE;
+	private ColonizationTarget selectColonizationTarget(ShortPoint2D dockWater) {
+		// Prefer a deposit that will be SUPPLIABLE once claimed: a mine can only ever be built and worked if its ground is walk-connected to a
+		// coast the cargo ship can reach (goods cross water only by sea-trade to a coast, then bearers within one walkable owned region). So we
+		// rank coast-suppliable deposits ahead of the raw ore-value score, and only fall back to the highest-value (possibly landlocked) deposit
+		// if NO reachable deposit is coast-suppliable. This makes the AI colonize e.g. a coast-adjacent coal deposit instead of a richer but
+		// water-locked gold one, so the outpost mine actually produces.
+		ColonizationTarget bestSuppliable = null;
+		double bestSuppliableValue = MIN_TARGET_VALUE;
+		ColonizationTarget bestFallback = null;
+		double bestFallbackValue = MIN_TARGET_VALUE;
 		for (EResourceType resource : neededResources()) {
-			List<ShortPoint2D> reachable = parent.aiStatistics.getSeaReachableResourceTargets(playerId, resource);
+			// select against the ACTUAL dock water the ferry departs from (not the base reference coast), so the chosen landing is in the
+			// ferry's own sea partition and the ferry can really path to it.
+			List<ShortPoint2D> reachable = parent.aiStatistics.getSeaReachableResourceTargets(playerId, resource, dockWater);
 			if (reachable.isEmpty()) {
 				continue;
 			}
-			double value = parent.aiStatistics.rateSeaReachableResourceTarget(playerId, resource, reachable);
-			if (value > bestValue) {
-				ShortPoint2D orePoint = reachable.get(0); // the Phase 0 rating uses the first deposit as the representative landing focus
-				ShortPoint2D landing = parent.aiStatistics.getSeaReachableLandingNear(playerId, orePoint);
-				if (landing != null) {
-					bestValue = value;
-					best = new ColonizationTarget(orePoint, landing);
+			double value = parent.aiStatistics.rateSeaReachableResourceTarget(playerId, resource, reachable, dockWater);
+			if (value <= MIN_TARGET_VALUE) {
+				continue;
+			}
+			// representative deposit for this resource: prefer the first coast-suppliable one; else the first reachable one (the Phase 0 rating
+			// treats the deposits of a resource as one target, so any of them is a valid landing focus).
+			ShortPoint2D repr = reachable.get(0);
+			boolean reprSuppliable = false;
+			int probes = 0;
+			for (ShortPoint2D ore : reachable) {
+				if (depositIsCoastSuppliable(ore, dockWater)) {
+					repr = ore;
+					reprSuppliable = true;
+					break;
+				}
+				if (++probes >= MAX_SUPPLIABILITY_PROBES) {
+					break;
 				}
 			}
+			ShortPoint2D landing = parent.aiStatistics.getSeaReachableLandingNear(playerId, repr, dockWater);
+			if (landing == null) {
+				continue;
+			}
+			if (reprSuppliable) {
+				if (value > bestSuppliableValue) {
+					bestSuppliableValue = value;
+					bestSuppliable = new ColonizationTarget(repr, landing);
+				}
+			} else if (value > bestFallbackValue) {
+				bestFallbackValue = value;
+				bestFallback = new ColonizationTarget(repr, landing);
+			}
 		}
-		return best;
+		ColonizationTarget chosen = bestSuppliable != null ? bestSuppliable : bestFallback;
+		return chosen;
+	}
+
+	/** Static, pre-claim coast-suppliability query for Phase-1 target selection - shared with the build module (see AiStatistics). */
+	private boolean depositIsCoastSuppliable(ShortPoint2D ore, ShortPoint2D dockWater) {
+		return parent.aiStatistics.isDepositCoastSuppliable(ore, dockWater);
 	}
 
 	private List<EResourceType> neededResources() {
@@ -213,23 +265,39 @@ public class ColonizationModule extends ArmyModule {
 		return resources;
 	}
 
-	/** Orders pioneers that have been ferried across and are ashore near the landing tile to walk onto the ore, claiming ground on the way. */
-	private void commandBeachhead(ColonizationTarget target, Set<Integer> soldiersWithOrders) {
+	/**
+	 * Orders pioneers that have been ferried across and are ashore to claim the beachhead. They must secure BOTH the ore itself (so a mine can be
+	 * built on it) AND a sea coast in the ore's own walk region (so the mine can be SUPPLIED - goods cross water only by sea-trade to a coast, then
+	 * bearers within one walkable owned region). The ferry lands them near the ore but the ore's walk region often reaches the coast only through
+	 * unclaimed tiles, so if we only marched everyone onto the ore we would own an inland pocket with no cargo-ship coast and the mine could never
+	 * be finished or worked. We therefore split the expedition: send part to the ore mountain and part to the ore-region coast tile, claiming a
+	 * contiguous corridor from the coast to the deposit as they walk (PioneerMovable works-on-the-way with EMoveToType.DEFAULT).
+	 */
+	private void commandBeachhead(ColonizationTarget target, ShortPoint2D dockWater, Set<Integer> soldiersWithOrders) {
 		List<ShortPoint2D> landed = new ArrayList<>();
 		for (ShortPoint2D position : parent.aiStatistics.getPositionsOfMovablesWithTypeForPlayer(playerId, EMovableType.PIONEER)) {
 			if (parent.isReachableByLand(position)) {
 				continue; // still on our home landmass - part of the home pool, not the overseas beachhead
 			}
-			if (position.getOnGridDistTo(target.landingTile) <= BEACHHEAD_COMMAND_RADIUS
-					&& landscapeGrid.isReachable(target.landingTile.x, target.landingTile.y, position.x, position.y, false)) {
-				landed.add(position);
-			}
+			landed.add(position);
 		}
 		if (landed.isEmpty()) {
 			return;
 		}
-		// DEFAULT lets the pioneers work on their way to the destination (EMoveToType.DEFAULT.isWorkOnDestination()), converting foreign ground
-		parent.sendTroopsTo(landed, target.orePoint, soldiersWithOrders, EMoveToType.DEFAULT);
+		ShortPoint2D coast = parent.aiStatistics.findOreRegionCoastShore(target.orePoint, dockWater);
+		if (coast == null) {
+			// no cargo-ship coast in the ore's walk region: just push everyone onto the ore (best effort - the mine will found but may not supply)
+			parent.sendTroopsTo(landed, target.orePoint, soldiersWithOrders, EMoveToType.DEFAULT);
+			return;
+		}
+		// The ore footprint gets claimed readily (the ferry lands the squad right by the ore and canConstructAt requires ownership, so the mine
+		// founds there), but the ore region's SEA COAST - the piece that makes the mine suppliable - is often left unclaimed, and cross-water
+		// squads are tiny (frequently a single pioneer). So spend the scarce pioneers on the MISSING piece: march them to claim the coast tile
+		// until we own it; only once the coast is secured do we send them back to keep pushing/holding the ore. Both tiles are in the ore's walk
+		// region, so the claim stays one contiguous, suppliable owned partition.
+		boolean coastOwned = parent.aiStatistics.getMainGrid().getPartitionsGrid().getPlayerIdAt(coast.x, coast.y) == playerId;
+		ShortPoint2D destination = coastOwned ? target.orePoint : coast;
+		parent.sendTroopsTo(landed, destination, soldiersWithOrders, EMoveToType.DEFAULT);
 	}
 
 	/** Converts up to {@code count} idle jobless bearers into pioneers, never dropping below the home carrier reserve. */
@@ -268,7 +336,12 @@ public class ColonizationModule extends ArmyModule {
 			return;
 		}
 		List<ShortPoint2D> batch = new ArrayList<>(homePioneers.subList(0, toLoad));
-		parent.sendTroopsTo(batch, ferry.getPosition(), soldiersWithOrders, EMoveToType.DEFAULT);
+		// FORCED (not DEFAULT): a pioneer moved with DEFAULT works-on-the-way (EMoveToType.DEFAULT.isWorkOnDestination()), i.e. it pioneers/
+		// claims ground as it walks and never actually reaches the ferry tile to board - so the squad never assembles and the ferry sits at
+		// home forever (observed: 73 pioneers raised, boarded=0). A FORCED move suppresses working, so the pioneer walks straight onto the
+		// ferry's water tile and boards, exactly like a soldier. (The landing side in commandBeachhead deliberately keeps DEFAULT, because
+		// there we DO want the pioneers to claim ground on their way to the ore.)
+		parent.sendTroopsTo(batch, ferry.getPosition(), soldiersWithOrders, EMoveToType.FORCED);
 	}
 
 	private int joblessBearersBeyondReserve() {

@@ -939,19 +939,27 @@ public class AiStatistics {
 	 *         base yet, no navigable coast, or no such deposit exists.
 	 */
 	public List<ShortPoint2D> getSeaReachableResourceTargets(byte playerId, EResourceType resourceType) {
+		return getSeaReachableResourceTargets(playerId, resourceType, findHomeCoastWaterFor(playerId));
+	}
+
+	/**
+	 * Like {@link #getSeaReachableResourceTargets(byte, EResourceType)} but with an <b>explicit</b> embarkation water tile - the actual water a
+	 * ferry would sail from (i.e. the dockyard's dock water). This is what {@link jsettlers.ai.army.ColonizationModule} must use: the no-arg
+	 * variant validates reachability from {@link #findHomeCoastWaterFor(byte)} (the nearest navigable water to the base <em>reference</em>),
+	 * which can lie in a <em>different sea partition</em> than the dock the ferry actually leaves from. A landing that is reachable from the
+	 * reference-coast but not from the dock leaves the ferry sailing toward a tile it can never path to (the pathfinder is gated by sea-partition
+	 * equality with the ferry's start tile). Selecting the target against the real dock water guarantees the ferry can reach the landing.
+	 */
+	public List<ShortPoint2D> getSeaReachableResourceTargets(byte playerId, EResourceType resourceType, ShortPoint2D embarkationWater) {
 		List<ShortPoint2D> targets = new ArrayList<>();
-		if (playerStatistics[playerId].referencePosition == null) {
-			return targets; // no base yet, so reachability is undefined
-		}
-		ShortPoint2D homeCoastWater = findHomeCoastWaterFor(playerId);
-		if (homeCoastWater == null) {
-			return targets; // the player's base does not touch navigable water, so nothing is reachable by sea
+		if (playerStatistics[playerId].referencePosition == null || embarkationWater == null) {
+			return targets; // no base yet, or no navigable embarkation coast, so reachability is undefined
 		}
 		for (ShortPoint2D ore : sortedResourceTypes[resourceType.ordinal]) {
 			if (hasPlayersBlockedPartition(playerId, ore.x, ore.y)) {
 				continue; // on our own landmass - reachable by land, not a colonization target
 			}
-			if (findSeaReachableLandingNear(ore, homeCoastWater) != null) {
+			if (findSeaReachableLandingNear(ore, embarkationWater) != null) {
 				targets.add(ore);
 			}
 		}
@@ -1006,6 +1014,125 @@ public class AiStatistics {
 				.orElse(null);
 	}
 
+	// how far around an ore deposit to look for a cargo-ship-reachable coast walk-connected to the ore's mountain-foot (see findOreRegionCoastShore)
+	private static final int COLONIZATION_COAST_SUPPLIABLE_SEARCH_RADIUS = 60;
+	// sentinel meaning "computed, but this deposit has no coast-suppliable shore" (HashMap distinguishes it from an absent = not-yet-computed key)
+	private static final ShortPoint2D NO_ORE_REGION_COAST = new ShortPoint2D(0, 0);
+	// memo of the static coast-shore query per (deposit, embarkation-sea). Map terrain is fixed, so this persists across ticks and is
+	// deterministic; it is keyed to be independent of update order.
+	private final java.util.Map<Long, ShortPoint2D> oreRegionCoastShoreCache = new java.util.HashMap<>();
+
+	// coast-ADJACENCY radius for pre-claim suppliability: a deposit only counts as sea-suppliable if a ferry-sea coast lies within this many
+	// tiles of its mountain foot. This predicts that the territory later claimed around the ore (a tower occupies a CommonConstants.TOWER_RADIUS
+	// blob) will itself border the ferry sea, so the mine's TERRITORY partition can be reached by a cargo ship and supplied by bearers.
+	private static final int COLONIZATION_COAST_ADJACENT_RADIUS = 12;
+
+	/**
+	 * Static, pre-claim topology query used by cross-water colonization target selection: once a mine is sunk on this ore deposit and the AI
+	 * claims territory around it, could that mine ever be SUPPLIED by sea? True iff a ferry-sea coast tile lies within
+	 * {@link #COLONIZATION_COAST_ADJACENT_RADIUS} tiles of the ore's mountain foot - i.e. the deposit is genuinely coast-ADJACENT.
+	 * <p>
+	 * This deliberately uses straight-line proximity, NOT a walk path to a distant coast. Goods dropped by a cargo ship enter the drop tile's
+	 * TERRITORY partition and bearers distribute only within that partition; a mountain-locked deposit can have a long walkable path to a coast
+	 * yet end up in a landlocked owned territory partition that no cargo ship can reach (observed: the gold deposit at 315,599 claimed a
+	 * landlocked partition despite a walk-connected coast 17 tiles away). Requiring the coast to be close makes the claimed territory itself
+	 * coastal, so the territory-partition sea-supply line can actually feed the mine.
+	 */
+	public boolean isDepositCoastSuppliable(ShortPoint2D ore, ShortPoint2D embarkationWater) {
+		if (ore == null || embarkationWater == null) {
+			return false;
+		}
+		ShortPoint2D foot = walkableNeighborOf(ore);
+		if (foot == null) {
+			return false; // the ore has no walkable foot a mine could be built beside / bearers could walk to
+		}
+		short ferrySea = landscapeGrid.getBlockedPartitionAt(embarkationWater.x, embarkationWater.y);
+		return HexGridArea.stream(foot.x, foot.y, 0, COLONIZATION_COAST_ADJACENT_RADIUS)
+				.filterBounds(mainGrid.getWidth(), mainGrid.getHeight())
+				.filter((x, y) -> landscapeGrid.getLandscapeTypeAt(x, y).isWater && landscapeGrid.getBlockedPartitionAt(x, y) == ferrySea)
+				.getFirst()
+				.isPresent();
+	}
+
+	/**
+	 * @return a walkable land tile that is (a) walk-connected to the ore's mountain-foot and (b) borders water on the {@code embarkationWater} sea
+	 *         partition - i.e. the coast tile in the ore's own walk region that a cargo ship can dock beside. Claiming this tile gives the
+	 *         beachhead's mine partition an owned sea coast, so goods dropped there reach the mine by bearers. Null if the ore's walk region has
+	 *         no such coast within range. Depends only on fixed map terrain, so it is memoized per (deposit, sea) - deterministic, no randomness.
+	 */
+	public ShortPoint2D findOreRegionCoastShore(ShortPoint2D ore, ShortPoint2D embarkationWater) {
+		if (ore == null || embarkationWater == null) {
+			return null;
+		}
+		short ferrySea = landscapeGrid.getBlockedPartitionAt(embarkationWater.x, embarkationWater.y);
+		long key = (((long) ferrySea & 0xFFFFL) << 32) | (((long) ore.x & 0xFFFFL) << 16) | ((long) ore.y & 0xFFFFL);
+		ShortPoint2D cached = oreRegionCoastShoreCache.get(key);
+		if (cached != null) {
+			return cached == NO_ORE_REGION_COAST ? null : cached;
+		}
+		ShortPoint2D result = computeOreRegionCoastShore(ore, ferrySea);
+		oreRegionCoastShoreCache.put(key, result == null ? NO_ORE_REGION_COAST : result);
+		return result;
+	}
+
+	private ShortPoint2D computeOreRegionCoastShore(ShortPoint2D ore, short ferrySea) {
+		ShortPoint2D foot = walkableNeighborOf(ore);
+		if (foot == null) {
+			return null; // the ore has no walkable foot to build a mine beside / walk goods to
+		}
+		short width = mainGrid.getWidth();
+		short height = mainGrid.getHeight();
+		java.util.Optional<ShortPoint2D> water = HexGridArea.stream(ore.x, ore.y, 1, COLONIZATION_COAST_SUPPLIABLE_SEARCH_RADIUS)
+				.filterBounds(width, height)
+				.filter((x, y) -> landscapeGrid.getLandscapeTypeAt(x, y).isWater && landscapeGrid.getBlockedPartitionAt(x, y) == ferrySea)
+				.filter((x, y) -> waterHasFootConnectedShore(x, y, foot))
+				.getFirst();
+		if (!water.isPresent()) {
+			return null;
+		}
+		// return the specific walkable, foot-connected land shore of that ferry-sea water tile (the tile to claim)
+		ShortPoint2D w = water.get();
+		for (EDirection dir : EDirection.VALUES) {
+			int lx = dir.gridDeltaX + w.x;
+			int ly = dir.gridDeltaY + w.y;
+			if (mainGrid.isInBounds(lx, ly) && !landscapeGrid.getLandscapeTypeAt(lx, ly).isWater
+					&& !landscapeGrid.isBlockedFor(lx, ly, false)
+					&& landscapeGrid.isReachable(foot.x, foot.y, lx, ly, false)) {
+				return new ShortPoint2D(lx, ly);
+			}
+		}
+		return null;
+	}
+
+	/** @return whether the ferry-sea water tile at (wx,wy) has a walkable land neighbour that is walk-connected to {@code foot}. */
+	private boolean waterHasFootConnectedShore(int wx, int wy, ShortPoint2D foot) {
+		for (EDirection dir : EDirection.VALUES) {
+			int lx = dir.gridDeltaX + wx;
+			int ly = dir.gridDeltaY + wy;
+			if (mainGrid.isInBounds(lx, ly) && !landscapeGrid.getLandscapeTypeAt(lx, ly).isWater
+					&& !landscapeGrid.isBlockedFor(lx, ly, false)
+					&& landscapeGrid.isReachable(foot.x, foot.y, lx, ly, false)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** @return {@code p} itself if it is a walkable (non-water, non-blocked) tile, else its first walkable neighbour, or null if none. */
+	private ShortPoint2D walkableNeighborOf(ShortPoint2D p) {
+		if (mainGrid.isInBounds(p.x, p.y) && !landscapeGrid.getLandscapeTypeAt(p.x, p.y).isWater && !landscapeGrid.isBlockedFor(p.x, p.y, false)) {
+			return p;
+		}
+		for (EDirection dir : EDirection.VALUES) {
+			int nx = dir.gridDeltaX + p.x;
+			int ny = dir.gridDeltaY + p.y;
+			if (mainGrid.isInBounds(nx, ny) && !landscapeGrid.getLandscapeTypeAt(nx, ny).isWater && !landscapeGrid.isBlockedFor(nx, ny, false)) {
+				return new ShortPoint2D(nx, ny);
+			}
+		}
+		return null;
+	}
+
 	/**
 	 * Public accessor used by {@link jsettlers.ai.army.ColonizationModule} (Phase 1) to find where a ferry should unload pioneers next to a
 	 * sea-reachable deposit. It reuses the exact partition/landing logic behind {@link #getSeaReachableResourceTargets(byte, EResourceType)}
@@ -1015,11 +1142,18 @@ public class AiStatistics {
 	 *         drops the settlers on the adjacent land), or null if the player has no navigable coast or no landing is in range.
 	 */
 	public ShortPoint2D getSeaReachableLandingNear(byte playerId, ShortPoint2D target) {
-		ShortPoint2D homeCoastWater = findHomeCoastWaterFor(playerId);
-		if (homeCoastWater == null) {
+		return getSeaReachableLandingNear(playerId, target, findHomeCoastWaterFor(playerId));
+	}
+
+	/**
+	 * Like {@link #getSeaReachableLandingNear(byte, ShortPoint2D)} but with an explicit embarkation water tile (the ferry's actual dock water),
+	 * so the returned landing is guaranteed to be in the same sea partition the ferry departs from - i.e. one the ferry can really path to.
+	 */
+	public ShortPoint2D getSeaReachableLandingNear(byte playerId, ShortPoint2D target, ShortPoint2D embarkationWater) {
+		if (embarkationWater == null) {
 			return null;
 		}
-		return findSeaReachableLandingNear(target, homeCoastWater);
+		return findSeaReachableLandingNear(target, embarkationWater);
 	}
 
 	/**
@@ -1039,13 +1173,16 @@ public class AiStatistics {
 	 * @return the score, or {@link Double#NEGATIVE_INFINITY} if the deposit is empty or not actually sea-reachable.
 	 */
 	public double rateSeaReachableResourceTarget(byte playerId, EResourceType resourceType, List<ShortPoint2D> reachableOre) {
-		if (reachableOre.isEmpty()) {
+		return rateSeaReachableResourceTarget(playerId, resourceType, reachableOre, findHomeCoastWaterFor(playerId));
+	}
+
+	/** As {@link #rateSeaReachableResourceTarget(byte, EResourceType, List)} but rating the landing from an explicit embarkation water tile. */
+	public double rateSeaReachableResourceTarget(byte playerId, EResourceType resourceType, List<ShortPoint2D> reachableOre,
+			ShortPoint2D embarkationWater) {
+		if (reachableOre.isEmpty() || embarkationWater == null) {
 			return Double.NEGATIVE_INFINITY;
 		}
-		ShortPoint2D homeCoastWater = findHomeCoastWaterFor(playerId);
-		if (homeCoastWater == null) {
-			return Double.NEGATIVE_INFINITY;
-		}
+		ShortPoint2D homeCoastWater = embarkationWater;
 		ShortPoint2D representative = reachableOre.get(0);
 		ShortPoint2D landing = findSeaReachableLandingNear(representative, homeCoastWater);
 		if (landing == null) {
