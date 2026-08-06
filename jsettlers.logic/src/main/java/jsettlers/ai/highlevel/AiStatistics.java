@@ -710,6 +710,17 @@ public class AiStatistics {
 		return playerStatistics[playerId].landToBuildOn;
 	}
 
+	/**
+	 * @return whether the tile {@code (x, y)} lies on the player's <b>home</b> partition ({@link PlayerStatistic#partitionIdToBuildOn}), as opposed
+	 *         to an across-water colonization beachhead partition that {@link #getLandForPlayer} may also include since Phase-2 colonization. Mirrors
+	 *         the home-partition branch of {@link #isBuildablePartitionForPlayer}. Used by construction-position finders to keep water/crop
+	 *         food-consumer buildings (waterworks, mill, baker, ...) on the populated home partition, where a manned waterworks, a river, and a
+	 *         population source exist - a foreign beachhead partition has none of these, so that chain can never run there.
+	 */
+	public boolean isOnHomePartition(int x, int y, byte playerId) {
+		return partitionsGrid.getPartitionIdAt(x, y) == playerStatistics[playerId].partitionIdToBuildOn;
+	}
+
 	public boolean blocksWorkingAreaOfOtherBuilding(int x, int y, byte playerId, BuildingVariant building) {
 		ECivilisation playerCivilisation = partitionsGrid.getPlayer(playerId).getCivilisation();
 

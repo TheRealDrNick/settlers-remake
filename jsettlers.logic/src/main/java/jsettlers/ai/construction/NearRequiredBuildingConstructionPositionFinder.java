@@ -32,11 +32,23 @@ public class NearRequiredBuildingConstructionPositionFinder extends Construction
 
 	private final BuildingVariant building;
 	private final EBuildingType neededBuildingType;
+	/**
+	 * When set, candidate tiles are restricted to the player's home partition. Enabled for water/crop food-consumer buildings (mill, baker, and
+	 * the pig-farm/slaughterhouse pair) that cannot be staffed or supplied on a foreign across-water colonization beachhead; left off for the
+	 * many other buildings that legitimately share this finder (sawmill, ironmelt, weaponsmith, ...).
+	 */
+	private final boolean homePartitionOnly;
 
 	public NearRequiredBuildingConstructionPositionFinder(Factory factory, EBuildingType ownBuildingType, EBuildingType neededBuildingType) {
+		this(factory, ownBuildingType, neededBuildingType, false);
+	}
+
+	public NearRequiredBuildingConstructionPositionFinder(Factory factory, EBuildingType ownBuildingType, EBuildingType neededBuildingType,
+			boolean homePartitionOnly) {
 		super(factory);
 		this.building = ownBuildingType.getVariant(civilisation);
 		this.neededBuildingType = neededBuildingType;
+		this.homePartitionOnly = homePartitionOnly;
 	}
 
 	@Override
@@ -44,6 +56,9 @@ public class NearRequiredBuildingConstructionPositionFinder extends Construction
 		List<ShortPoint2D> neededBuildings = aiStatistics.getBuildingPositionsOfTypeForPlayer(neededBuildingType, playerId);
 		List<ScoredConstructionPosition> scoredConstructionPositions = new ArrayList<>();
 		for (ShortPoint2D point : aiStatistics.getLandForPlayer(playerId)) {
+			if (homePartitionOnly && !aiStatistics.isOnHomePartition(point.x, point.y, playerId)) {
+				continue; // keep water/crop food-consumers on the populated home partition (no-op on single-landmass maps)
+			}
 			if (constructionMap.canConstructAt(point.x, point.y, building.getType(), playerId)
 					&& !aiStatistics.blocksWorkingAreaOfOtherBuilding(point.x, point.y, playerId, building)) {
 				ShortPoint2D nearestNeededBuilding = AiStatistics.detectNearestPointFromList(point, neededBuildings);

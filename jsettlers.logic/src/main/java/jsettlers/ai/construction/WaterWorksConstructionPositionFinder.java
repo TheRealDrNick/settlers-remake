@@ -47,6 +47,11 @@ public class WaterWorksConstructionPositionFinder extends ConstructionPositionFi
 		}
 		List<ScoredConstructionPosition> scoredConstructionPositions = new ArrayList<>();
 		for (ShortPoint2D point : aiStatistics.getLandForPlayer(playerId)) {
+			// a waterworks needs a manned bearer AND a path-reachable river; a foreign colonization beachhead partition has neither, so keep it
+			// on the home partition (no-op on single-landmass maps, where getLandForPlayer is already the home partition only).
+			if (!aiStatistics.isOnHomePartition(point.x, point.y, playerId)) {
+				continue;
+			}
 			if (constructionMap.canConstructAt(point.x, point.y, WATERWORKS, playerId)
 					&& !aiStatistics.blocksWorkingAreaOfOtherBuilding(point.x, point.y, playerId, waterworks)) {
 				ShortPoint2D nearestRiverPosition = rivers.getNearestPoint(point, waterworks.getWorkRadius(), null);

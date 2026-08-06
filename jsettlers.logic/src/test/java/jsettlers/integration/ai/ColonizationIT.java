@@ -110,6 +110,10 @@ public class ColonizationIT {
 		boolean builtExportHarbor = false; // a HARBOR raised on the beachhead to ship the farm's crop home
 		boolean cropShippedHome = false;   // a cargo ship observed carrying colony crop toward the home coast (attributable proof)
 		int maxHomeCrop = -1;              // high-water mark of the home partition's crop stock across the run
+		// bake-at-home guard: the AI must NOT waste planks/stone on an un-staffable food chain (waterworks/mill/baker) out on the foreign
+		// beachhead - that chain can never run there (no population source, no home waterworks). Track the worst-case count across all ticks.
+		int maxForeignFoodChainBuildings = 0;
+		int maxHomeBread = -1;             // informational: home BREAD stock high-water mark (home bakes its own crop + the shipped colony crop)
 		for (int minute = STEP_MINUTES; minute <= TOTAL_MINUTES; minute += STEP_MINUTES) {
 			MatchConstants.clock().fastForwardTo(minute * MINUTES);
 			aiStatistics.updateStatistics();
@@ -129,6 +133,7 @@ public class ColonizationIT {
 			int foreignFarmOccupied = 0;
 			int foreignHarborUnderConstruction = 0;
 			int foreignHarborFinished = 0;
+			int foreignFoodChainBuildings = 0; // WATERWORKS/MILL/BAKER raised across water - must stay 0 (bake-at-home)
 			for (Building building : Building.getAllBuildings()) {
 				if (building.getPlayer().playerId != subjectId) {
 					continue;
@@ -139,6 +144,9 @@ public class ColonizationIT {
 					continue;
 				}
 				EBuildingType type = building.getBuildingVariant().getType();
+				if (type == EBuildingType.WATERWORKS || type == EBuildingType.MILL || type == EBuildingType.BAKER) {
+					foreignFoodChainBuildings++; // any of the un-staffable water/crop food-consumers raised across water
+				}
 				if (type.isMilitaryBuilding()) {
 					if (!building.isConstructionFinished()) {
 						foreignMilitaryUnderConstruction++;
@@ -247,6 +255,13 @@ public class ColonizationIT {
 			if (homeCrop > maxHomeCrop) {
 				maxHomeCrop = homeCrop;
 			}
+			int homeBread = homeData == null ? -1 : homeData.getAmountOf(EMaterialType.BREAD);
+			if (homeBread > maxHomeBread) {
+				maxHomeBread = homeBread;
+			}
+			if (foreignFoodChainBuildings > maxForeignFoodChainBuildings) {
+				maxForeignFoodChainBuildings = foreignFoodChainBuildings;
+			}
 
 			int dockyards = aiStatistics.getNumberOfBuildingTypeForPlayer(EBuildingType.DOCKYARD, subjectId);
 			int harbors = aiStatistics.getTotalNumberOfBuildingTypeForPlayer(EBuildingType.HARBOR, subjectId);
@@ -266,6 +281,9 @@ public class ColonizationIT {
 			System.out.printf(
 					"[ColonizationIT.export] t=%3dmin | beachheadHarbor(building=%d finished=%d) | homeCrop=%d maxHomeCrop=%d homeStone=%d | cargoShipsCarryingCrop=%d cropInTransit=%d%n",
 					minute, foreignHarborUnderConstruction, foreignHarborFinished, homeCrop, maxHomeCrop, homeStone, cargoShipsCarryingCrop, cropInTransit);
+			System.out.printf(
+					"[ColonizationIT.bakeHome] t=%3dmin | foreignFoodChain(waterworks+mill+baker)=%d maxForeign=%d | homeBread=%d maxHomeBread=%d%n",
+					minute, foreignFoodChainBuildings, maxForeignFoodChainBuildings, homeBread, maxHomeBread);
 
 			if (foreignHarborUnderConstruction + foreignHarborFinished > 0) {
 				builtExportHarbor = true;
@@ -489,7 +507,14 @@ public class ColonizationIT {
 						+ "within " + TOTAL_MINUTES + " minutes (crop never shipped home). See the per-step [ColonizationIT.export] log above "
 						+ "(cargoShipsCarryingCrop / cropInTransit / homeCrop).",
 				cropShippedHome);
-		System.out.printf("[ColonizationIT] RESULT colonizedAndHeld=%b builtBeachheadFarm=%b beachheadFarmProducing=%b builtExportHarbor=%b cropShippedHome=%b maxHomeCrop=%d builtBeachheadMine=%b beachheadMineProducing=%b%n",
-				colonizedAndHeld, builtBeachheadFarm, beachheadFarmProducing, builtExportHarbor, cropShippedHome, maxHomeCrop, builtBeachheadMine, beachheadMineProducing);
+		// Bake-at-home goal: the AI must NEVER raise a WATERWORKS/MILL/BAKER on a foreign across-water partition - that food chain can never be
+		// staffed or supplied there and only wastes planks/stone. It bakes AT HOME (water + population + bakeries) from the shipped colony crop.
+		Assert.assertEquals(
+				"AI_VERY_HARD built a WATERWORKS/MILL/BAKER on a foreign (across-water) partition - that food chain can never run on a beachhead "
+						+ "(no population source, no home waterworks) and wastes build materials. Expected 0 across all ticks. See the per-step "
+						+ "[ColonizationIT.bakeHome] log above.",
+				0, maxForeignFoodChainBuildings);
+		System.out.printf("[ColonizationIT] RESULT colonizedAndHeld=%b builtBeachheadFarm=%b beachheadFarmProducing=%b builtExportHarbor=%b cropShippedHome=%b maxHomeCrop=%d maxForeignFoodChainBuildings=%d maxHomeBread=%d builtBeachheadMine=%b beachheadMineProducing=%b%n",
+				colonizedAndHeld, builtBeachheadFarm, beachheadFarmProducing, builtExportHarbor, cropShippedHome, maxHomeCrop, maxForeignFoodChainBuildings, maxHomeBread, builtBeachheadMine, beachheadMineProducing);
 	}
 }

@@ -113,14 +113,19 @@ public abstract class ConstructionPositionFinder {
 				return new NearRequiredBuildingConstructionPositionFinder(this, type, IRONMELT);
 			case BARRACK:
 				return new NearRequiredBuildingConstructionPositionFinder(this, type, WEAPONSMITH);
+			// MILL/PIG_FARM/BAKER/SLAUGHTERHOUSE are water/crop food-consumers: their worker is a jobless BEARER drawn from the local partition and
+			// (baker/mill) they need WATER from a manned waterworks on a path-reachable river. A foreign across-water colonization beachhead has no
+			// population source and no home waterworks, so that chain can never run there - restrict placement to the home partition. (BREWERY is
+			// left unrestricted: it is not part of this fix's scope.) The restriction is a no-op on single-landmass maps.
 			case MILL:
 			case PIG_FARM:
-				return new NearRequiredBuildingConstructionPositionFinder(this, type, FARM);
+				return new NearRequiredBuildingConstructionPositionFinder(this, type, FARM, true);
 			case BAKER:
+				return new NearRequiredBuildingConstructionPositionFinder(this, type, MILL, true);
 			case BREWERY:
 				return new NearRequiredBuildingConstructionPositionFinder(this, type, MILL);
 			case SLAUGHTERHOUSE:
-				return new NearRequiredBuildingConstructionPositionFinder(this, type, PIG_FARM);
+				return new NearRequiredBuildingConstructionPositionFinder(this, type, PIG_FARM, true);
 			case TEMPLE:
 				return new TempleConstructionPositionFinder(this);
 			case BIG_TEMPLE:
