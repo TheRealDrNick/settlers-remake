@@ -117,7 +117,7 @@ public class ColonizationBuildModule extends ArmyModule {
 	private static final int MIN_DELIVERED_TO_BUILD = 1;
 	// Phase 3 - ores we will sink a mine onto, in priority order, paired with the mine that extracts each. Mirrors the resources
 	// ColonizationModule.neededResources() colonizes for (COAL, IRONORE, GOLDORE, plus GEMSTONE for the Egyptians). Only variants that exist
-	// for the player's civilisation and are actually mines are used (see findBeachheadMinePlacement), so this stays civ-safe.
+	// for the player's civilisation and are actually mines are used (see findSuppliableMinePlacement), so this stays civ-safe.
 	private static final EResourceType[] MINEABLE_ORES = { EResourceType.COAL, EResourceType.IRONORE, EResourceType.GOLDORE, EResourceType.GEMSTONE };
 	private static final EBuildingType[] ORE_MINES = { EBuildingType.COALMINE, EBuildingType.IRONMINE, EBuildingType.GOLDMINE, EBuildingType.GEMSMINE };
 	// Phase 3 - goods added to the sea-trade supply line once a beachhead mine exists: a PICK turns a beachhead bearer into the MINER that
@@ -790,46 +790,6 @@ public class ColonizationBuildModule extends ArmyModule {
 		return null;
 	}
 
-	/**
-	 * Finds where to sink a mine on the beachhead: it walks {@link #MINEABLE_ORES} in priority order and, for the first ore actually present
-	 * under a buildable beachhead tile, returns the best-scoring position (most ore under the mine's blocked tiles, mirroring
-	 * {@link jsettlers.ai.construction.MineConstructionPositionFinder}). Deterministic - {@code getLandForPlayer} iterates in a stable order
-	 * and ties keep the earlier tile.
-	 *
-	 * @return a mine building type + construction position, or null if no beachhead ore is currently mineable.
-	 */
-	private MinePlacement findBeachheadMinePlacement(ShortPoint2D beachhead) {
-		AbstractConstructionMarkableMap constructionGrid = mainGrid.getConstructionMarksGrid();
-		ECivilisation civilisation = parent.getPlayer().getCivilisation();
-		for (int i = 0; i < MINEABLE_ORES.length; i++) {
-			EResourceType ore = MINEABLE_ORES[i];
-			BuildingVariant variant = ORE_MINES[i].getVariant(civilisation);
-			if (variant == null || !variant.isMine()) {
-				continue; // this civilisation has no such mine (e.g. the Romans have no gemstone mine)
-			}
-			ShortPoint2D best = null;
-			int bestAmount = 0;
-			for (ShortPoint2D land : ownedForeignTiles) {
-				if (parent.isReachableByLand(land) || !onSameLandmass(land, beachhead)) {
-					continue; // only beachhead ground on the landmass we are developing
-				}
-				if (!constructionGrid.canConstructAt(land.x, land.y, variant.getType(), playerId)) {
-					continue;
-				}
-				int amount = oreUnderMine(variant, land, ore);
-				if (amount > bestAmount) {
-					bestAmount = amount;
-					best = land;
-				}
-			}
-			if (best != null) {
-				ShortPoint2D door = variant.getDoorTile().calculatePoint(best);
-				return new MinePlacement(variant.getType(), best, mainGrid.isInBounds(door.x, door.y) ? door : best);
-			}
-		}
-		return null;
-	}
-
 	/** @return the sea blocked-partition the colonization ferry sails (the ready dockyard's dock water), or 0 (BLOCKED, no real sea) if none. */
 	private short ferrySeaPartition() {
 		DockyardBuilding dockyard = findReadyDockyard();
@@ -1312,16 +1272,6 @@ public class ColonizationBuildModule extends ArmyModule {
 			}
 		}
 		return null;
-	}
-
-	private int countBeachheadMovables(ShortPoint2D beachhead, EMovableType type) {
-		int count = 0;
-		for (ShortPoint2D position : parent.aiStatistics.getPositionsOfMovablesWithTypeForPlayer(playerId, type)) {
-			if (!parent.isReachableByLand(position) && onSameLandmass(position, beachhead)) {
-				count++;
-			}
-		}
-		return count;
 	}
 
 	private boolean onSameLandmass(ShortPoint2D a, ShortPoint2D b) {

@@ -32,8 +32,6 @@ import jsettlers.input.tasks.MovableGuiTask;
 import jsettlers.input.tasks.OrderShipGuiTask;
 import jsettlers.logic.buildings.Building;
 import jsettlers.logic.buildings.workers.DockyardBuilding;
-import jsettlers.logic.map.grid.MainGrid;
-import jsettlers.logic.map.grid.landscape.LandscapeGrid;
 import jsettlers.logic.movable.interfaces.IFerryMovable;
 import jsettlers.logic.movable.interfaces.ILogicMovable;
 
@@ -67,8 +65,6 @@ public class ColonizationModule extends ArmyModule {
 	private static final int FERRY_CAPACITY = 7;
 	// distance below which a ferry is considered to have "arrived" at a target water position (mirrors NavalInvasionModule)
 	private static final int FERRY_ARRIVAL_DISTANCE = 6;
-	// landed pioneers within this distance of the landing tile (and on its landmass) are treated as the beachhead expedition
-	private static final int BEACHHEAD_COMMAND_RADIUS = 15;
 	// land expansion is considered (nearly) exhausted - and colonization worth considering - once at most this much home border is still
 	// ingestible by pioneers. This is the same signal WhatToDoAi.commandPioneers() uses (it releases pioneers when the border is empty).
 	private static final int BORDER_EXHAUSTED_THRESHOLD = 8;
@@ -84,15 +80,12 @@ public class ColonizationModule extends ArmyModule {
 	// AI_VERY_EASY, AI_EASY, AI_HARD, AI_VERY_HARD, HUMAN - easy opponents and the human player never colonize across water.
 	private static final boolean[] COLONIZATION_ENABLED_BY_PLAYER_TYPE = { false, false, true, true, false };
 
-	private final LandscapeGrid landscapeGrid;
 	private final byte playerId;
 	private final boolean colonizationEnabled;
 	private final int minJoblessBearerReserve;
 
 	public ColonizationModule(ArmyFramework parent) {
 		super(parent);
-		MainGrid mainGrid = parent.aiStatistics.getMainGrid();
-		this.landscapeGrid = mainGrid.getLandscapeGrid();
 		this.playerId = parent.getPlayerId();
 		this.colonizationEnabled = COLONIZATION_ENABLED_BY_PLAYER_TYPE[parent.getPlayer().getPlayerType().ordinal()];
 		// a more naval-cautious play style (e.g. TURTLE) keeps a larger settler reserve at home before venturing overseas; a RAIDER commits
