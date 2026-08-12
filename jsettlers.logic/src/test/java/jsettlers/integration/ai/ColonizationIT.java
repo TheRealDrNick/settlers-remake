@@ -108,6 +108,8 @@ public class ColonizationIT {
 		boolean builtBeachheadFarm = false;
 		boolean beachheadFarmProducing = false;
 		boolean builtExportHarbor = false; // a HARBOR raised on the beachhead to ship the farm's crop home
+		boolean builtBeachheadLivinghouse = false; // a SMALL_LIVINGHOUSE raised on the beachhead to grow its labor pool
+		int maxForeignBearers = -1;        // high-water mark of jobless BEARERs on the beachhead (proves the living house's local spawn fired)
 		boolean cropShippedHome = false;   // a cargo ship observed carrying colony crop toward the home coast (attributable proof)
 		int maxHomeCrop = -1;              // high-water mark of the home partition's crop stock across the run
 		// bake-at-home guard: the AI must NOT waste planks/stone on an un-staffable food chain (waterworks/mill/baker) out on the foreign
@@ -133,6 +135,10 @@ public class ColonizationIT {
 			int foreignFarmOccupied = 0;
 			int foreignHarborUnderConstruction = 0;
 			int foreignHarborFinished = 0;
+			int foreignLivinghouseUnderConstruction = 0;
+			int foreignLivinghouseFinished = 0;
+			int foreignHousingAll = 0;   // ALL living houses (small+medium+big) across water - documents the emergent economy expansion
+			int foreignBuildingsTotal = 0; // every building the subject owns across water - how far the beachhead grew beyond the bare farm
 			int foreignFoodChainBuildings = 0; // WATERWORKS/MILL/BAKER raised across water - must stay 0 (bake-at-home)
 			for (Building building : Building.getAllBuildings()) {
 				if (building.getPlayer().playerId != subjectId) {
@@ -143,7 +149,11 @@ public class ColonizationIT {
 				if (!foreign) {
 					continue;
 				}
+				foreignBuildingsTotal++;
 				EBuildingType type = building.getBuildingVariant().getType();
+				if (type == EBuildingType.SMALL_LIVINGHOUSE || type == EBuildingType.MEDIUM_LIVINGHOUSE || type == EBuildingType.BIG_LIVINGHOUSE) {
+					foreignHousingAll++;
+				}
 				if (type == EBuildingType.WATERWORKS || type == EBuildingType.MILL || type == EBuildingType.BAKER) {
 					foreignFoodChainBuildings++; // any of the un-staffable water/crop food-consumers raised across water
 				}
@@ -180,6 +190,13 @@ public class ColonizationIT {
 						foreignHarborUnderConstruction++;
 					} else {
 						foreignHarborFinished++;
+					}
+				} else if (type == EBuildingType.SMALL_LIVINGHOUSE) {
+					// the beachhead living house - it spawns jobless bearers locally to grow the colony's labor pool
+					if (!building.isConstructionFinished()) {
+						foreignLivinghouseUnderConstruction++;
+					} else {
+						foreignLivinghouseFinished++;
 					}
 				}
 			}
@@ -263,6 +280,26 @@ public class ColonizationIT {
 				maxForeignFoodChainBuildings = foreignFoodChainBuildings;
 			}
 
+			// beachhead labor pool: jobless BEARERs standing on a foreign (across-water) partition. The living house spawns these locally every
+			// ~2s, so after it finishes this count should climb past the ~8 pioneer-bootstrap toward ~18. The player's total bed amount corroborates
+			// (each spawned bearer does total++ to self-fund its bed, so a finished 10-bed living house lifts it by +10).
+			int foreignBearers = 0;
+			for (ShortPoint2D p : aiStatistics.getPositionsOfMovablesWithTypeForPlayer(subjectId, jsettlers.common.movable.EMovableType.BEARER)) {
+				if (home != null && !aiStatistics.getMainGrid().getLandscapeGrid().isReachable(p.x, p.y, home.x, home.y, false)) {
+					foreignBearers++;
+				}
+			}
+			if (foreignBearers > maxForeignBearers) {
+				maxForeignBearers = foreignBearers;
+			}
+			int totalBeds = partitionsGrid.getPlayer(subjectId).getBedInformation().getTotalBedAmount();
+			System.out.printf(
+					"[ColonizationIT.pop] t=%3dmin | smallLivinghouse(building=%d finished=%d) allHousing=%d foreignBuildings=%d | foreignBearers=%d maxForeignBearers=%d | totalBeds=%d%n",
+					minute, foreignLivinghouseUnderConstruction, foreignLivinghouseFinished, foreignHousingAll, foreignBuildingsTotal, foreignBearers, maxForeignBearers, totalBeds);
+			if (foreignLivinghouseUnderConstruction + foreignLivinghouseFinished > 0) {
+				builtBeachheadLivinghouse = true;
+			}
+
 			int dockyards = aiStatistics.getNumberOfBuildingTypeForPlayer(EBuildingType.DOCKYARD, subjectId);
 			int harbors = aiStatistics.getTotalNumberOfBuildingTypeForPlayer(EBuildingType.HARBOR, subjectId);
 			int ferries = aiStatistics.getPositionsOfMovablesWithTypeForPlayer(subjectId, jsettlers.common.movable.EMovableType.FERRY).size();
@@ -298,7 +335,12 @@ public class ColonizationIT {
 			if (foreignFarmUnderConstruction + foreignFarmFinished > 0) {
 				builtBeachheadFarm = true;
 			}
-			if (producedCrop > 0) {
+			// Crop-production proof: crop still sitting in the beachhead partition, OR crop already whisked to the export line. A cargo ship carrying
+			// CROP toward home (cropShippedHome) is attributable beachhead-farm crop - the home economy delivers its own crop by bearer within its
+			// partition, never by cargo ship - so it proves the farm produced. With the living house's grown bearer pool the crop is carried to the
+			// export harbor faster than it can accumulate as partition stock, so producedCrop can read 0 at a 10-min sample even while the farm
+			// steadily produces (homeCrop climbs); the shipped-home signal keeps this production check honest without depending on drain timing.
+			if (producedCrop > 0 || cropShippedHome) {
 				beachheadFarmProducing = true;
 			}
 
@@ -514,7 +556,17 @@ public class ColonizationIT {
 						+ "(no population source, no home waterworks) and wastes build materials. Expected 0 across all ticks. See the per-step "
 						+ "[ColonizationIT.bakeHome] log above.",
 				0, maxForeignFoodChainBuildings);
-		System.out.printf("[ColonizationIT] RESULT colonizedAndHeld=%b builtBeachheadFarm=%b beachheadFarmProducing=%b builtExportHarbor=%b cropShippedHome=%b maxHomeCrop=%d maxForeignFoodChainBuildings=%d maxHomeBread=%d builtBeachheadMine=%b beachheadMineProducing=%b%n",
-				colonizedAndHeld, builtBeachheadFarm, beachheadFarmProducing, builtExportHarbor, cropShippedHome, maxHomeCrop, maxForeignFoodChainBuildings, maxHomeBread, builtBeachheadMine, beachheadMineProducing);
+		// Population-growth goal: the AI must raise a SMALL_LIVINGHOUSE on the beachhead and its local bearer-spawn must actually grow the labor
+		// pool past the ~8 pioneer-bootstrap - the prerequisite for the colony to build up beyond a bare farm. Both are logged via [ColonizationIT.pop].
+		Assert.assertTrue(
+				"AI_VERY_HARD held a beachhead but never raised a SMALL_LIVINGHOUSE on it within " + TOTAL_MINUTES
+						+ " minutes. See the per-step [ColonizationIT.pop] log above (livinghouse building / finished).",
+				builtBeachheadLivinghouse);
+		Assert.assertTrue(
+				"AI_VERY_HARD raised a beachhead living house but the beachhead bearer pool never grew past the 8-pioneer bootstrap (maxForeignBearers="
+						+ maxForeignBearers + ") within " + TOTAL_MINUTES + " minutes, so its local spawn did not add labor. See [ColonizationIT.pop] above.",
+				maxForeignBearers > 8);
+		System.out.printf("[ColonizationIT] RESULT colonizedAndHeld=%b builtBeachheadFarm=%b beachheadFarmProducing=%b builtExportHarbor=%b cropShippedHome=%b maxHomeCrop=%d maxForeignFoodChainBuildings=%d maxHomeBread=%d builtBeachheadMine=%b beachheadMineProducing=%b builtBeachheadLivinghouse=%b maxForeignBearers=%d%n",
+				colonizedAndHeld, builtBeachheadFarm, beachheadFarmProducing, builtExportHarbor, cropShippedHome, maxHomeCrop, maxForeignFoodChainBuildings, maxHomeBread, builtBeachheadMine, beachheadMineProducing, builtBeachheadLivinghouse, maxForeignBearers);
 	}
 }

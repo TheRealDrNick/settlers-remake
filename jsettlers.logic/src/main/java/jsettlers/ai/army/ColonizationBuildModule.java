@@ -265,6 +265,7 @@ public class ColonizationBuildModule extends ArmyModule {
 		bootstrapBeachheadCarriers(anchor, anchorPartition, soldiersWithOrders);
 		driveMaterialDelivery(anchor, anchorPartition, ferrySea, kind == EOutpostKind.FARM, exportPhase);
 		buildAndOccupyTower(anchor, soldiersWithOrders);
+		buildBeachheadLivinghouse(anchor, anchorPartition);
 		if (kind == EOutpostKind.FARM) {
 			buildAndWorkFarm(anchor, anchorPartition, plannedFarm, existingFarm);
 			shipFarmCarriers(anchor, anchorPartition, existingFarm, soldiersWithOrders);
@@ -647,7 +648,7 @@ public class ColonizationBuildModule extends ArmyModule {
 		}
 
 		boolean goods = hasDeliveredConstructionGoods(beachhead);
-		ShortPoint2D towerPosition = goods ? findBeachheadTowerPosition(beachhead) : null;
+		ShortPoint2D towerPosition = goods ? findBeachheadBuildPosition(beachhead, -1, EBuildingType.TOWER) : null;
 		if (!goods) {
 			return; // wait until the sea-trade supply line has actually landed building material on the beachhead
 		}
@@ -680,8 +681,12 @@ public class ColonizationBuildModule extends ArmyModule {
 		return null;
 	}
 
-	/** @return a buildable beachhead tile a tower fits on, or null if none is currently constructable. */
-	private ShortPoint2D findBeachheadTowerPosition(ShortPoint2D beachhead) {
+	/**
+	 * @return a buildable beachhead tile of {@code type} nearest {@code beachhead} on its landmass, or null if none is currently constructable.
+	 *         When {@code partition >= 0} only tiles in that TERRITORY partition qualify (so e.g. a living house's spawned bearers land in the
+	 *         outpost's own suppliable partition); pass {@code -1} for no partition filter (the tower, which just needs to hold the landmass).
+	 */
+	private ShortPoint2D findBeachheadBuildPosition(ShortPoint2D beachhead, int partition, EBuildingType type) {
 		AbstractConstructionMarkableMap constructionGrid = mainGrid.getConstructionMarksGrid();
 		ShortPoint2D best = null;
 		int bestDist = Integer.MAX_VALUE;
@@ -689,7 +694,10 @@ public class ColonizationBuildModule extends ArmyModule {
 			if (parent.isReachableByLand(land) || !onSameLandmass(land, beachhead)) {
 				continue; // only beachhead ground on the landmass we are developing
 			}
-			if (!constructionGrid.canConstructAt(land.x, land.y, EBuildingType.TOWER, playerId)) {
+			if (partition >= 0 && partitionsGrid.getPartitionIdAt(land.x, land.y) != partition) {
+				continue; // must sit in the requested territory partition (so spawned bearers land where they are needed)
+			}
+			if (!constructionGrid.canConstructAt(land.x, land.y, type, playerId)) {
 				continue;
 			}
 			// prefer the buildable tile nearest the beachhead anchor (the owned tile nearest the ore), so the tower's territory reaches the ore
@@ -700,6 +708,33 @@ public class ColonizationBuildModule extends ArmyModule {
 			}
 		}
 		return best;
+	}
+
+	/**
+	 * Grows the beachhead's labor pool so the colony can build up beyond a bare farm. Raises a SMALL_LIVINGHOUSE on the outpost's own territory
+	 * partition: it is a {@code SpawnBuilding} whose bearer-type worker spawns a jobless {@code BEARER} into that partition every ~2s (self-occupied,
+	 * self-funding its beds), which is the only local growth source since bearers never cross water. More local bearers = the colony can staff more
+	 * building + worker jobs (each digger/bricklayer/farmer is a jobless bearer + a shipped tool). Gated on the beachhead tower being FINISHED (defend
+	 * first, and don't make the house compete with the tower for the first diggers) and on construction goods having arrived. Colonization only ever
+	 * needs one, so an existing foreign living house short-circuits. The 2 PLANK + 3 STONE it costs already ship over the existing supply line.
+	 */
+	private void buildBeachheadLivinghouse(ShortPoint2D anchor, int anchorPartition) {
+		for (ShortPoint2D position : parent.aiStatistics.getBuildingPositionsOfTypeForPlayer(EBuildingType.SMALL_LIVINGHOUSE, playerId)) {
+			if (onSameLandmass(position, anchor)) {
+				return; // already have one on the beachhead landmass
+			}
+		}
+		Building tower = findBeachheadMilitaryBuilding(anchor);
+		if (tower == null || !tower.isConstructionFinished()) {
+			return; // hold the beachhead first; don't contend with the tower for the first diggers
+		}
+		if (!hasDeliveredConstructionGoods(anchor)) {
+			return; // wait until the supply line has landed build material on the beachhead
+		}
+		ShortPoint2D position = findBeachheadBuildPosition(anchor, anchorPartition, EBuildingType.SMALL_LIVINGHOUSE);
+		if (position != null) {
+			parent.taskScheduler.scheduleTask(new ConstructBuildingTask(EGuiAction.BUILD, playerId, position, EBuildingType.SMALL_LIVINGHOUSE));
+		}
 	}
 
 	/**
