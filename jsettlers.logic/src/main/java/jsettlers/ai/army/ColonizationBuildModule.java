@@ -159,6 +159,16 @@ public class ColonizationBuildModule extends ArmyModule {
 	private static final int FERRY_ARRIVAL_DISTANCE = 6;
 	// landed soldiers within this distance of the beachhead tower (and on its landmass) are treated as the garrison expedition
 	private static final int GARRISON_COMMAND_RADIUS = 15;
+	// defense scaling: the colony may raise up to this many towers as it grows. Each successive tower is unlocked once the colony has grown by
+	// one more FINISHED foreign living house (the "settlement size crossed a threshold" signal), so extra rings appear only as a real settlement
+	// forms rather than all at once. Kept small so the colony fortifies without carpeting the beachhead.
+	private static final int MAX_BEACHHEAD_TOWERS = 3;
+	// the beachhead BARRACK turns a jobless bearer + a shipped SWORD into a SWORDSMAN with no coal/iron/weaponsmith chain, so the colony makes its
+	// own soldiers. SWORD ships over the same sea-trade line as the farmer's scythe; keep a small reserve and nudge home to always hold a couple to
+	// load (else the barrack has no weapon to turn into a soldier). Its 4 STONE + 5 PLANK build goods already ship over OUTPOST_TRADE_MATERIALS.
+	private static final EMaterialType SOLDIER_WEAPON = EMaterialType.SWORD;
+	private static final int WEAPON_TRADE_REQUEST = 2;
+	private static final int WEAPON_HOME_PRODUCTION = 2;
 
 	private final MainGrid mainGrid;
 	private final LandscapeGrid landscapeGrid;
@@ -266,6 +276,7 @@ public class ColonizationBuildModule extends ArmyModule {
 		driveMaterialDelivery(anchor, anchorPartition, ferrySea, kind == EOutpostKind.FARM, exportPhase);
 		buildAndOccupyTower(anchor, soldiersWithOrders);
 		buildBeachheadLivinghouse(anchor, anchorPartition);
+		buildBeachheadBarrack(anchor, anchorPartition);
 		if (kind == EOutpostKind.FARM) {
 			buildAndWorkFarm(anchor, anchorPartition, plannedFarm, existingFarm);
 			shipFarmCarriers(anchor, anchorPartition, existingFarm, soldiersWithOrders);
@@ -611,6 +622,15 @@ public class ColonizationBuildModule extends ArmyModule {
 			parent.taskScheduler.scheduleTask(new SetMaterialProductionGuiTask(playerId, harbor.getPosition(), tool,
 					SetMaterialProductionAction.EMaterialProductionType.SET_PRODUCTION, TOOL_HOME_PRODUCTION));
 		}
+		// the beachhead BARRACK turns a jobless bearer + a shipped SWORD into a SWORDSMAN (no coal/iron/weaponsmith), so the colony makes its own
+		// soldiers. Keep a small SWORD reserve on the trade line and nudge home to hold a couple to load, exactly like the farmer's scythe - else the
+		// barrack has no weapon to turn into a soldier. Colonization-gated (needs the ready harbor above), so land maps are unaffected.
+		if (harbor.getRequestedTradingFor(SOLDIER_WEAPON) < WEAPON_TRADE_REQUEST) {
+			parent.taskScheduler.scheduleTask(new ChangeTradingRequestGuiTask(EGuiAction.CHANGE_TRADING, playerId, harbor.getPosition(),
+					SOLDIER_WEAPON, WEAPON_TRADE_REQUEST, false));
+		}
+		parent.taskScheduler.scheduleTask(new SetMaterialProductionGuiTask(playerId, harbor.getPosition(), SOLDIER_WEAPON,
+				SetMaterialProductionAction.EMaterialProductionType.SET_PRODUCTION, WEAPON_HOME_PRODUCTION));
 		// once we are developing a FARM outpost, also ship a SCYTHE so a beachhead bearer can become the FARMER that mans it. The farm's
 		// PLANK/STONE build goods + the digger/bricklayer tools already ship via OUTPOST_TRADE_MATERIALS, so the scythe is all the farm adds.
 		if (farmSupply) {
@@ -639,22 +659,65 @@ public class ColonizationBuildModule extends ArmyModule {
 	 * beachhead tower. Occupation is what actually enforces the claimed ground.
 	 */
 	private void buildAndOccupyTower(ShortPoint2D beachhead, Set<Integer> soldiersWithOrders) {
-		Building beachheadTower = findBeachheadMilitaryBuilding(beachhead);
-		if (beachheadTower != null) {
-			if (beachheadTower.isConstructionFinished() && !beachheadTower.isOccupied()) {
-				shipGarrisonSoldier(beachheadTower, beachhead, soldiersWithOrders);
+		// Garrison EVERY finished-but-unmanned foreign tower (defense now scales to several rings), and tally the foreign towers so we can decide
+		// whether to raise another. Occupation is what actually enforces the claimed ground.
+		int foreignTowers = 0;
+		int unbuiltForeignTowers = 0;
+		for (ShortPoint2D position : parent.aiStatistics.getBuildingPositionsOfTypesForPlayer(EBuildingType.MILITARY_BUILDINGS, playerId)) {
+			if (parent.isReachableByLand(position)) {
+				continue; // home landmass
 			}
-			return; // a tower already exists (finished or still building) - do not place a second one
+			Building tower = parent.aiStatistics.getBuildingAt(position);
+			if (tower == null) {
+				continue;
+			}
+			foreignTowers++;
+			if (!tower.isConstructionFinished()) {
+				unbuiltForeignTowers++;
+			} else if (!tower.isOccupied()) {
+				shipGarrisonSoldier(tower, beachhead, soldiersWithOrders);
+			}
 		}
 
-		boolean goods = hasDeliveredConstructionGoods(beachhead);
-		ShortPoint2D towerPosition = goods ? findBeachheadBuildPosition(beachhead, -1, EBuildingType.TOWER) : null;
-		if (!goods) {
+		if (!hasDeliveredConstructionGoods(beachhead)) {
 			return; // wait until the sea-trade supply line has actually landed building material on the beachhead
 		}
+		if (foreignTowers == 0) {
+			placeBeachheadTower(beachhead); // the FIRST tower holds the beachhead - place it as soon as goods arrive (unchanged behaviour)
+			return;
+		}
+		// Additional towers as the colony grows into a settlement: hold-first (an occupied tower already enforces the ground), one at a time (no
+		// unbuilt tower pending), capped small, and only once the settlement has grown by another FINISHED living house - the "size crossed a
+		// threshold" gate, so extra rings appear only as a real settlement forms rather than immediately after the first tower.
+		if (unbuiltForeignTowers == 0 && foreignTowers < MAX_BEACHHEAD_TOWERS && hasOccupiedForeignMilitaryBuilding()
+				&& finishedForeignLivinghouses() >= foreignTowers) {
+			placeBeachheadTower(beachhead);
+		}
+	}
+
+	private void placeBeachheadTower(ShortPoint2D beachhead) {
+		ShortPoint2D towerPosition = findBeachheadBuildPosition(beachhead, -1, EBuildingType.TOWER);
 		if (towerPosition != null) {
 			parent.taskScheduler.scheduleTask(new ConstructBuildingTask(EGuiAction.BUILD, playerId, towerPosition, EBuildingType.TOWER));
 		}
+	}
+
+	/** @return how many living houses (small/medium/big) the player has FINISHED on a foreign (across-water) landmass - a proxy for how large the
+	 *          colony has grown, used to gate additional defensive towers (each successive tower needs one more finished foreign living house). */
+	private int finishedForeignLivinghouses() {
+		int count = 0;
+		for (EBuildingType type : new EBuildingType[] { EBuildingType.SMALL_LIVINGHOUSE, EBuildingType.MEDIUM_LIVINGHOUSE, EBuildingType.BIG_LIVINGHOUSE }) {
+			for (ShortPoint2D position : parent.aiStatistics.getBuildingPositionsOfTypeForPlayer(type, playerId)) {
+				if (parent.isReachableByLand(position)) {
+					continue; // home landmass
+				}
+				Building building = parent.aiStatistics.getBuildingAt(position);
+				if (building != null && building.isConstructionFinished()) {
+					count++;
+				}
+			}
+		}
+		return count;
 	}
 
 	/** @return whether the player has any finished, occupied military building on a foreign (across-water) landmass, i.e. the beachhead is held. */
@@ -734,6 +797,33 @@ public class ColonizationBuildModule extends ArmyModule {
 		ShortPoint2D position = findBeachheadBuildPosition(anchor, anchorPartition, EBuildingType.SMALL_LIVINGHOUSE);
 		if (position != null) {
 			parent.taskScheduler.scheduleTask(new ConstructBuildingTask(EGuiAction.BUILD, playerId, position, EBuildingType.SMALL_LIVINGHOUSE));
+		}
+	}
+
+	/**
+	 * Lets the colony make its OWN soldiers with no ore chain: raises a BARRACK on the outpost's territory partition, which turns a jobless beachhead
+	 * BEARER plus a shipped SWORD into a SWORDSMAN (see {@link jsettlers.logic.buildings.military.Barrack}) - no coal/iron/weaponsmith needed. Clones
+	 * {@link #buildBeachheadLivinghouse}: gated on the beachhead tower being FINISHED (hold first) and on construction goods having arrived, and an
+	 * existing foreign barrack short-circuits (colonization only needs one). BARRACK is not a MILITARY_BUILDING, so it never disturbs the tower
+	 * hold-gating. Its 4 STONE + 5 PLANK build goods already ship over OUTPOST_TRADE_MATERIALS; only the SWORD is added to the trade line (see
+	 * {@link #driveMaterialDelivery}). The soldiers it produces just reinforce/garrison the colony for now - no offensive command (YAGNI).
+	 */
+	private void buildBeachheadBarrack(ShortPoint2D anchor, int anchorPartition) {
+		for (ShortPoint2D position : parent.aiStatistics.getBuildingPositionsOfTypeForPlayer(EBuildingType.BARRACK, playerId)) {
+			if (onSameLandmass(position, anchor)) {
+				return; // already have one on the beachhead landmass
+			}
+		}
+		Building tower = findBeachheadMilitaryBuilding(anchor);
+		if (tower == null || !tower.isConstructionFinished()) {
+			return; // hold the beachhead first; don't contend with the tower for the first diggers
+		}
+		if (!hasDeliveredConstructionGoods(anchor)) {
+			return; // wait until the supply line has landed build material on the beachhead
+		}
+		ShortPoint2D position = findBeachheadBuildPosition(anchor, anchorPartition, EBuildingType.BARRACK);
+		if (position != null) {
+			parent.taskScheduler.scheduleTask(new ConstructBuildingTask(EGuiAction.BUILD, playerId, position, EBuildingType.BARRACK));
 		}
 	}
 

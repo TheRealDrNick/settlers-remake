@@ -69,7 +69,9 @@ public class ColonizationIT {
 	private static final int STEP_MINUTES = 10;
 	// The farm reaches its first crop only around t=140; shipping that crop HOME then needs further headroom to raise a beachhead export harbor,
 	// dock it, and sail a cargo ship home. The loop breaks early as soon as the colony's crop is observed en route to / arrived at home.
-	private static final int TOTAL_MINUTES = 240;
+	// The military milestones (a 2nd defensive tower, the barrack + a locally-produced soldier) appear LATER than the first crop, so the run must be
+	// allowed to continue past the crop-shipped-home point to observe them - raised from 240 with headroom to finish the 2nd tower and garrison it.
+	private static final int TOTAL_MINUTES = 300;
 
 	static {
 		CommonConstants.ENABLE_CONSOLE_LOGGING = true;
@@ -110,6 +112,12 @@ public class ColonizationIT {
 		boolean builtExportHarbor = false; // a HARBOR raised on the beachhead to ship the farm's crop home
 		boolean builtBeachheadLivinghouse = false; // a SMALL_LIVINGHOUSE raised on the beachhead to grow its labor pool
 		int maxForeignBearers = -1;        // high-water mark of jobless BEARERs on the beachhead (proves the living house's local spawn fired)
+		boolean builtBeachheadBarrack = false;      // a BARRACK finished on a foreign partition (the colony can make its own soldiers)
+		boolean localProducedSoldierObserved = false; // a free foreign SOLDIER seen while all foreign towers are already occupied + a barrack stands -
+		                                            // i.e. a soldier the barrack produced, not a garrison soldier we ferried (those occupy towers)
+		int maxForeignSoldiers = -1;       // high-water mark of free foreign SOLDIER movables on the colony landmass
+		int maxForeignMilitaryFinished = 0; // high-water mark of finished foreign towers (defense scaling: expect >=2 as the colony grows)
+		int maxForeignMilitaryOccupied = 0; // high-water mark of finished+occupied foreign towers
 		boolean cropShippedHome = false;   // a cargo ship observed carrying colony crop toward the home coast (attributable proof)
 		int maxHomeCrop = -1;              // high-water mark of the home partition's crop stock across the run
 		// bake-at-home guard: the AI must NOT waste planks/stone on an un-staffable food chain (waterworks/mill/baker) out on the foreign
@@ -137,6 +145,8 @@ public class ColonizationIT {
 			int foreignHarborFinished = 0;
 			int foreignLivinghouseUnderConstruction = 0;
 			int foreignLivinghouseFinished = 0;
+			int foreignBarrackUnderConstruction = 0;
+			int foreignBarrackFinished = 0;
 			int foreignHousingAll = 0;   // ALL living houses (small+medium+big) across water - documents the emergent economy expansion
 			int foreignBuildingsTotal = 0; // every building the subject owns across water - how far the beachhead grew beyond the bare farm
 			int foreignFoodChainBuildings = 0; // WATERWORKS/MILL/BAKER raised across water - must stay 0 (bake-at-home)
@@ -197,6 +207,13 @@ public class ColonizationIT {
 						foreignLivinghouseUnderConstruction++;
 					} else {
 						foreignLivinghouseFinished++;
+					}
+				} else if (type == EBuildingType.BARRACK) {
+					// the beachhead barrack - it turns a jobless bearer + a shipped SWORD into a SWORDSMAN, so the colony makes its own soldiers
+					if (!building.isConstructionFinished()) {
+						foreignBarrackUnderConstruction++;
+					} else {
+						foreignBarrackFinished++;
 					}
 				}
 			}
@@ -299,6 +316,36 @@ public class ColonizationIT {
 			if (foreignLivinghouseUnderConstruction + foreignLivinghouseFinished > 0) {
 				builtBeachheadLivinghouse = true;
 			}
+
+			// --- MILITARY milestones: defense scaling (>=2 towers) + the colony making its own soldiers (barrack). Count FREE foreign soldier
+			// movables on the colony landmass. A garrison soldier we ferried occupies its tower and then stops being a free movable, so once every
+			// finished foreign tower is occupied any free foreign soldier standing on the beachhead can only have come from the barrack - attributable
+			// proof of local production (not a ferried garrison soldier).
+			int foreignSoldiers = 0;
+			for (ShortPoint2D p : aiStatistics.getPositionsOfMovablesWithTypesForPlayer(subjectId, jsettlers.common.movable.EMovableType.SOLDIERS)) {
+				if (home != null && !aiStatistics.getMainGrid().getLandscapeGrid().isReachable(p.x, p.y, home.x, home.y, false)) {
+					foreignSoldiers++;
+				}
+			}
+			if (foreignSoldiers > maxForeignSoldiers) {
+				maxForeignSoldiers = foreignSoldiers;
+			}
+			if (foreignMilitaryFinished > maxForeignMilitaryFinished) {
+				maxForeignMilitaryFinished = foreignMilitaryFinished;
+			}
+			if (foreignMilitaryOccupied > maxForeignMilitaryOccupied) {
+				maxForeignMilitaryOccupied = foreignMilitaryOccupied;
+			}
+			if (foreignBarrackFinished > 0) {
+				builtBeachheadBarrack = true;
+			}
+			if (foreignBarrackFinished > 0 && foreignMilitaryFinished > 0 && foreignMilitaryOccupied == foreignMilitaryFinished && foreignSoldiers > 0) {
+				localProducedSoldierObserved = true;
+			}
+			System.out.printf(
+					"[ColonizationIT.army] t=%3dmin | foreignBarrack(building=%d finished=%d) foreignTower(finished=%d occupied=%d maxFinished=%d) | foreignSoldiers=%d maxForeignSoldiers=%d localProducedSoldier=%b%n",
+					minute, foreignBarrackUnderConstruction, foreignBarrackFinished, foreignMilitaryFinished, foreignMilitaryOccupied,
+					maxForeignMilitaryFinished, foreignSoldiers, maxForeignSoldiers, localProducedSoldierObserved);
 
 			int dockyards = aiStatistics.getNumberOfBuildingTypeForPlayer(EBuildingType.DOCKYARD, subjectId);
 			int harbors = aiStatistics.getTotalNumberOfBuildingTypeForPlayer(EBuildingType.HARBOR, subjectId);
@@ -514,9 +561,13 @@ public class ColonizationIT {
 			if (foreignMilitaryOccupied > 0) {
 				colonizedAndHeld = true;
 			}
-			// stop as soon as the whole pipeline is demonstrably complete: a beachhead farm that has produced crop AND that crop has been shipped
-			// HOME (the colony feeds the home economy - this slice's goal), or - the legacy mine outcome - a beachhead mine that has produced ore.
-			if ((builtBeachheadFarm && beachheadFarmProducing && cropShippedHome) || (builtBeachheadMine && beachheadMineProducing)) {
+			// stop as soon as the whole pipeline is demonstrably complete: the crop outcome (a beachhead farm that produced crop AND shipped it HOME,
+			// or the legacy mine that produced ore) AND the military milestones this slice adds (a 2nd defensive tower finished, a barrack, and a
+			// locally-produced soldier). The military buildings appear later than the first crop, so we must NOT break on the crop signal alone -
+			// otherwise the run would stop before they exist. If a milestone is never reached the loop simply runs to TOTAL_MINUTES and the honest
+			// assertion below fires.
+			boolean cropComplete = (builtBeachheadFarm && beachheadFarmProducing && cropShippedHome) || (builtBeachheadMine && beachheadMineProducing);
+			if (cropComplete && builtBeachheadBarrack && localProducedSoldierObserved && maxForeignMilitaryFinished >= 2) {
 				break;
 			}
 		}
@@ -566,7 +617,25 @@ public class ColonizationIT {
 				"AI_VERY_HARD raised a beachhead living house but the beachhead bearer pool never grew past the 8-pioneer bootstrap (maxForeignBearers="
 						+ maxForeignBearers + ") within " + TOTAL_MINUTES + " minutes, so its local spawn did not add labor. See [ColonizationIT.pop] above.",
 				maxForeignBearers > 8);
-		System.out.printf("[ColonizationIT] RESULT colonizedAndHeld=%b builtBeachheadFarm=%b beachheadFarmProducing=%b builtExportHarbor=%b cropShippedHome=%b maxHomeCrop=%d maxForeignFoodChainBuildings=%d maxHomeBread=%d builtBeachheadMine=%b beachheadMineProducing=%b builtBeachheadLivinghouse=%b maxForeignBearers=%d%n",
-				colonizedAndHeld, builtBeachheadFarm, beachheadFarmProducing, builtExportHarbor, cropShippedHome, maxHomeCrop, maxForeignFoodChainBuildings, maxHomeBread, builtBeachheadMine, beachheadMineProducing, builtBeachheadLivinghouse, maxForeignBearers);
+		// Feature B - the colony makes its OWN soldiers: it must raise a BARRACK on a foreign partition, and at least one locally-produced soldier
+		// must be observed (a free foreign soldier while all foreign towers are already occupied - so not a ferried garrison soldier). Both are
+		// logged via [ColonizationIT.army].
+		Assert.assertTrue(
+				"AI_VERY_HARD held a beachhead but never raised a BARRACK on it within " + TOTAL_MINUTES
+						+ " minutes. See the per-step [ColonizationIT.army] log above (foreignBarrack building / finished).",
+				builtBeachheadBarrack);
+		Assert.assertTrue(
+				"AI_VERY_HARD built a beachhead barrack but no locally-produced soldier was ever observed (a free foreign soldier while every foreign "
+						+ "tower was already occupied) within " + TOTAL_MINUTES + " minutes (maxForeignSoldiers=" + maxForeignSoldiers
+						+ "). See the per-step [ColonizationIT.army] log above.",
+				localProducedSoldierObserved);
+		// Feature A - defense scales with the settlement: as the colony grows the AI raises additional towers, so more than one foreign tower must be
+		// finished. Logged via [ColonizationIT.army] (foreignTower maxFinished).
+		Assert.assertTrue(
+				"AI_VERY_HARD held a beachhead but its defense never scaled to a second tower (maxForeignMilitaryFinished=" + maxForeignMilitaryFinished
+						+ ") within " + TOTAL_MINUTES + " minutes. See the per-step [ColonizationIT.army] log above.",
+				maxForeignMilitaryFinished >= 2);
+		System.out.printf("[ColonizationIT] RESULT colonizedAndHeld=%b builtBeachheadFarm=%b beachheadFarmProducing=%b builtExportHarbor=%b cropShippedHome=%b maxHomeCrop=%d maxForeignFoodChainBuildings=%d maxHomeBread=%d builtBeachheadMine=%b beachheadMineProducing=%b builtBeachheadLivinghouse=%b maxForeignBearers=%d builtBeachheadBarrack=%b localProducedSoldier=%b maxForeignSoldiers=%d maxForeignMilitaryFinished=%d maxForeignMilitaryOccupied=%d%n",
+				colonizedAndHeld, builtBeachheadFarm, beachheadFarmProducing, builtExportHarbor, cropShippedHome, maxHomeCrop, maxForeignFoodChainBuildings, maxHomeBread, builtBeachheadMine, beachheadMineProducing, builtBeachheadLivinghouse, maxForeignBearers, builtBeachheadBarrack, localProducedSoldierObserved, maxForeignSoldiers, maxForeignMilitaryFinished, maxForeignMilitaryOccupied);
 	}
 }
