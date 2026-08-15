@@ -106,15 +106,20 @@ public class ThiefMovable extends AttackableHumanMovable implements IGraphicsThi
 
 	protected static Node<ThiefMovable> stealMaterial() {
 		return sequence(
-				condition(mov -> mov.grid.fitsSearchType(mov, mov.currentTarget.x, mov.currentTarget.y, ESearchType.FOREIGN_MATERIAL)),
-
-				playAction(EMovableAction.ACTION1, (short)(ACTION1_DURATION*1000)),
-
+				// Take the good ATOMICALLY on arrival, then play the steal animation while already holding it. Previously the 1s ACTION1
+				// animation ran BETWEEN the "is there foreign material here?" check and the actual takeMaterial(), and in that window the
+				// owner's own bearers frequently carried the offered good away - so the thief played the steal animation but popped an empty
+				// stack and walked home empty-handed. Grabbing it first closes that race.
 				condition(mov -> {
+					if (!mov.grid.fitsSearchType(mov, mov.currentTarget.x, mov.currentTarget.y, ESearchType.FOREIGN_MATERIAL)) {
+						return false;
+					}
 					EMaterialType stolenMaterial = mov.grid.takeMaterial(mov.currentTarget);
 					mov.setMaterial(stolenMaterial);
 					return stolenMaterial != EMaterialType.NO_MATERIAL;
-				})
+				}),
+
+				playAction(EMovableAction.ACTION1, (short)(ACTION1_DURATION*1000))
 		);
 	}
 
