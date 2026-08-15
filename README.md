@@ -107,6 +107,23 @@ By default, when a single-player game has several computer players, the first on
 ## Build instructions and developer's guide
 The [build instructions](https://github.com/paulwedeck/settlers-remake/wiki/Compiling-using-gradle) and the [developer's guide](https://github.com/paulwedeck/settlers-remake/wiki/Developer's%20Guide) can be found in our wiki.
 
+### Running the desktop game from a local build
+You need a JDK (17 is used to build) and, as above, the `GFX`/`SND` folders of an original Settlers 3 installation (the GOG edition gives correct graphics; the demo works with the limitations noted above). From the repository root:
+
+- **Build and launch in one step:**
+  ```
+  ./gradlew run
+  ```
+  (Windows: `gradlew.bat run`.) This compiles everything and starts the desktop client (`jsettlers.main.swing.SwingManagedJSettlers`). On the **first launch** a dialog asks you to select your Settlers 3 installation folder (the one containing `GFX`/`SND`); the choice is remembered for later runs. Savegames land in `jsettlers.main.swing/save`.
+
+- **Build a runnable jar instead:**
+  ```
+  ./gradlew :jsettlers.main.swing:shadowJar
+  ```
+  produces the self-contained `jsettlers.main.swing/build/libs/JSettlers.jar`, which you can start with `java -jar JSettlers.jar` (same first-launch folder prompt).
+
+To skip the folder dialog (e.g. for scripted runs), pass a config file that records the Settlers folder and options: `./gradlew run --args="configFile=/path/to/options.prp"` — a default `options.prp` is shipped alongside the packaged jar and documents the available settings.
+
 ### Textures
 JSettlers is meant to be used with the original textures from Settlers 3.
 However we are working on replacing these with new textures that have a more permissive license.
