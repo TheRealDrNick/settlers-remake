@@ -1,5 +1,5 @@
-/*******************************************************************************
- * Copyright (c) 2015 - 2018
+/*
+ * Copyright (c) 2018
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"),
  * to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense,
@@ -11,33 +11,30 @@
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
- *******************************************************************************/
-package jsettlers.input;
-
-import jsettlers.common.menu.UIState;
+ */
+package jsettlers.common.action;
 
 /**
- * Interface for TaskExecutor to give commands to the GuiInterface using the executor.
- * 
- * @author Andreas Eberle
- * 
+ * A save request that optionally carries the user-entered savegame description.
+ * <p>
+ * A {@code null} description means "user requested a save; still needs the description prompt". A non-null (possibly empty) description means "commit
+ * this save with this description".
+ *
+ * @author Claude
  */
-public interface ITaskExecutorGuiInterface {
+public class SaveAction extends Action {
+
+	private final String description;
+
+	public SaveAction(String description) {
+		super(EActionType.SAVE);
+		this.description = description;
+	}
 
 	/**
-	 * renew the current selection, because it's possible, that movables changed.
+	 * @return the savegame description, or {@code null} if the description prompt still has to be shown.
 	 */
-	void renewSelection();
-
-	/**
-	 * 
-	 * @return Returns the current {@link UIState} that can be used to save it with a savegame.
-	 */
-	UIState getUIState();
-
-	/**
-	 * @return the description entered by the user for the pending single-player quicksave (may be empty, never null).
-	 */
-	String getSaveDescription();
-
+	public String getDescription() {
+		return description;
+	}
 }

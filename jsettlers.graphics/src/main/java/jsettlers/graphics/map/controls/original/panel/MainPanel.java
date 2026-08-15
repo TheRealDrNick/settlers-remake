@@ -22,6 +22,7 @@ import jsettlers.common.action.CastSpellAction;
 import jsettlers.common.action.EActionType;
 import jsettlers.common.action.IAction;
 import jsettlers.common.action.PointAction;
+import jsettlers.common.action.SaveAction;
 import jsettlers.common.action.SetDockAction;
 import jsettlers.common.action.SetTradingWaypointAction;
 import jsettlers.common.action.SetTradingWaypointAction.EWaypointType;
@@ -111,7 +112,7 @@ public class MainPanel extends UIPanel {
 	private final CountArrows changeMusicVolumeArrows = new CountArrows(() -> new Action(EActionType.MUSIC_VOLUME_UP), () -> new Action(EActionType.MUSIC_VOLUME_DOWN));
 
 	private final LabeledButton exitButton = new LabeledButton(Labels.getString("game-menu-quit"), new Action(EActionType.EXIT));
-	private final LabeledButton saveButton = new LabeledButton(Labels.getString("game-menu-save"), new Action(EActionType.SAVE));
+	private final LabeledButton saveButton = new LabeledButton(Labels.getString("game-menu-save"), new SaveAction(null));
 	private final LabeledButton cancelButton = new LabeledButton(Labels.getString("game-menu-cancel"), new ExecutableAction() {
 		public void execute() {
 			setContent(ContentType.BUILD_NORMAL);

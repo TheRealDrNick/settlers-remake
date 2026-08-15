@@ -69,7 +69,7 @@ public interface IGuiInputGrid {
 	 * @throws IOException
 	 * @throws InterruptedException
 	 */
-	void save(Byte playerId, UIState uiState) throws IOException, InterruptedException;
+	void save(Byte playerId, UIState uiState, String description) throws IOException, InterruptedException;
 
 	void toggleFogOfWar();
 

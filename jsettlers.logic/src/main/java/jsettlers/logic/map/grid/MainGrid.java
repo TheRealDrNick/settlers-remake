@@ -365,7 +365,7 @@ public final class MainGrid implements Serializable {
 		}
 	}
 
-	public void save(Byte playerId, UIState uiState) throws IOException {
+	public void save(Byte playerId, UIState uiState, String description) throws IOException {
 		boolean savedPausingState = MatchConstants.clock().isPausing();
 		MatchConstants.clock().setPausing(true);
 		try {
@@ -375,7 +375,7 @@ public final class MainGrid implements Serializable {
 		}
 
 		PlayerState[] playerStates = calculatePlayerStates(playerId, uiState);
-		MapFileHeader header = generateSaveHeader(playerId);
+		MapFileHeader header = generateSaveHeader(playerId, description);
 		MapList list = MapList.getDefaultList();
 		list.saveMap(playerStates, header, MainGrid.this);
 
@@ -408,8 +408,8 @@ public final class MainGrid implements Serializable {
 		return null;
 	}
 
-	public MapFileHeader generateSaveHeader(Byte playerId) {
-		// TODO: description
+	public MapFileHeader generateSaveHeader(Byte playerId, String description) {
+		String saveDescription = (description == null || description.trim().isEmpty()) ? mapName : description;
 		PreviewImageCreator previewImageCreator = new PreviewImageCreator(width, height, MapFileHeader.PREVIEW_IMAGE_SIZE,
 			landscapeGrid.getPreviewImageDataSupplier()
 		);
@@ -431,7 +431,7 @@ public final class MainGrid implements Serializable {
 			MapType.SAVED_SINGLE,
 			mapName,
 			mapId,
-			"TODO: description",
+			saveDescription,
 			width,
 			height,
 			(short) 1,
@@ -2168,8 +2168,8 @@ public final class MainGrid implements Serializable {
 		}
 
 		@Override
-		public final void save(Byte playerId, UIState uiState) throws IOException, InterruptedException {
-			MainGrid.this.save(playerId, uiState);
+		public final void save(Byte playerId, UIState uiState, String description) throws IOException, InterruptedException {
+			MainGrid.this.save(playerId, uiState, description);
 		}
 
 		@Override

@@ -46,6 +46,7 @@ import jsettlers.common.action.SetDockAction;
 import jsettlers.common.action.SetMaterialDistributionSettingsAction;
 import jsettlers.common.action.SetMaterialPrioritiesAction;
 import jsettlers.common.action.SetMaterialProductionAction;
+import jsettlers.common.action.SaveAction;
 import jsettlers.common.action.ChangeMovableSettingsAction;
 import jsettlers.common.action.SetMovableLimitTypeAction;
 import jsettlers.common.action.SetSpeedAction;
@@ -132,6 +133,12 @@ public class GuiInterface implements IMapInterfaceListener, ITaskExecutorGuiInte
 	 * The current selection. This is updated by game logic.
 	 */
 	private SelectionSet currentSelection = new SelectionSet();
+
+	/**
+	 * Description for the next single-player quicksave, stashed here because the {@link jsettlers.logic.map.grid.GuiTask} carrying the save request does
+	 * not serialize it (single-player only). Read by {@link GuiTaskExecutor} via {@link #getSaveDescription()}.
+	 */
+	private String saveDescription = "";
 
 	public GuiInterface(IMapInterfaceConnector connector, IGameClock clock, ITaskScheduler taskScheduler, IGuiInputGrid grid, IGameStoppable gameStoppable, byte playerId, boolean multiplayer) {
 		this.connector = connector;
@@ -302,7 +309,12 @@ public class GuiInterface implements IMapInterfaceListener, ITaskExecutorGuiInte
 				break;
 
 			case SAVE:
-				taskScheduler.scheduleTask(new SimpleGuiTask(EGuiAction.QUICK_SAVE, playerId));
+				// Only the committed save (SaveAction with a non-null description) is written; a null description means the Swing prompt listener
+				// still has to ask the user, so we do nothing and let it re-fire the committed action.
+				if (action instanceof SaveAction && ((SaveAction) action).getDescription() != null) {
+					saveDescription = ((SaveAction) action).getDescription();
+					taskScheduler.scheduleTask(new SimpleGuiTask(EGuiAction.QUICK_SAVE, playerId));
+				}
 				break;
 
 			case CONVERT:
@@ -808,6 +820,11 @@ public class GuiInterface implements IMapInterfaceListener, ITaskExecutorGuiInte
 	@Override
 	public UIState getUIState() {
 		return connector.getUIState();
+	}
+
+	@Override
+	public String getSaveDescription() {
+		return saveDescription;
 	}
 
 	/**

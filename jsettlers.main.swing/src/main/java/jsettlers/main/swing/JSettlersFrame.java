@@ -23,6 +23,7 @@ import java.awt.KeyboardFocusManager;
 import java.awt.event.KeyEvent;
 
 import javax.swing.JFrame;
+import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.WindowConstants;
@@ -34,6 +35,8 @@ import go.graphics.swing.AreaContainer;
 import go.graphics.swing.sound.SwingSoundPlayer;
 
 import jsettlers.common.CommitInfo;
+import jsettlers.common.action.EActionType;
+import jsettlers.common.action.SaveAction;
 import jsettlers.common.menu.IJoinPhaseMultiplayerGameConnector;
 import jsettlers.common.menu.IMapInterfaceConnector;
 import jsettlers.common.menu.IMultiplayerConnector;
@@ -198,6 +201,25 @@ public class JSettlersFrame extends JFrame {
 		MapContent content = new MapContent(startedGame, soundPlayer, ETextDrawPosition.DESKTOP);
 		SwingUtilities.invokeLater(() -> setContent(content));
 		startedGame.setGameExitListener(exitGame -> SwingUtilities.invokeLater(() -> showEndgameStatistics(exitGame)));
-		return content.getInterfaceConnector();
+		IMapInterfaceConnector connector = content.getInterfaceConnector();
+		// Desktop save now depends on this Swing prompt listener: a bare SAVE request (SaveAction with null description) is intercepted here to ask the
+		// user for a description and re-fired as a committed SaveAction; only the committed one is written by the game logic.
+		connector.addListener(action -> {
+			if (action.getActionType() != EActionType.SAVE) {
+				return;
+			}
+			boolean needsPrompt = !(action instanceof SaveAction) || ((SaveAction) action).getDescription() == null;
+			if (!needsPrompt) {
+				return; // already the committed save; let the logic handle it (avoid a prompt loop)
+			}
+			SwingUtilities.invokeLater(() -> {
+				String description = JOptionPane.showInputDialog(this, "Description for this savegame (optional):", "");
+				if (description == null) {
+					return; // user cancelled -> abort the save
+				}
+				connector.fireAction(new SaveAction(description));
+			});
+		});
+		return connector;
 	}
 }

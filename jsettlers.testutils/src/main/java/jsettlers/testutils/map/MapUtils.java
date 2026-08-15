@@ -81,7 +81,7 @@ public final class MapUtils {
 	public static MapLoader saveMainGrid(MainGrid mainGrid, Byte playerId, UIState uiState) {
 		try {
 			System.out.println("Writing savegame with final state of failed test.");
-			mainGrid.save(playerId, uiState);
+			mainGrid.save(playerId, uiState, null);
 			return ReplayUtils.getNewestSavegame();
 		} catch (IOException e) {
 			System.err.println("Tried to create a savegame but failed:");

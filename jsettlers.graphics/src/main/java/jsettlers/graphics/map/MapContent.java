@@ -47,6 +47,7 @@ import jsettlers.common.action.Action;
 import jsettlers.common.action.EActionType;
 import jsettlers.common.action.IAction;
 import jsettlers.common.action.PointAction;
+import jsettlers.common.action.SaveAction;
 import jsettlers.common.action.ScreenChangeAction;
 import jsettlers.common.action.SelectAreaAction;
 import jsettlers.common.action.ShowConstructionMarksAction;
@@ -817,7 +818,7 @@ public final class MapContent implements RegionContent, IMapInterfaceListener, A
 		} else if ("F6".equalsIgnoreCase(keyCode)) {
 			return new Action(EActionType.ZOOM_OUT);
 		} else if ("F2".equalsIgnoreCase(keyCode)) {
-			return new Action(EActionType.SAVE);
+			return new SaveAction(null);
 		} else if ("TAB".equalsIgnoreCase(keyCode)) {
 			return new Action(EActionType.FILTER_WOUNDED);
 		} else if ("DELETE".equalsIgnoreCase(keyCode)) {

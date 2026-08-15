@@ -294,7 +294,7 @@ class GuiTaskExecutor implements ITaskExecutor {
 
 	private void save() {
 		try {
-			grid.save(playerId, guiInterface.getUIState());
+			grid.save(playerId, guiInterface.getUIState(), guiInterface.getSaveDescription());
 		} catch (IOException | InterruptedException e) {
 			e.printStackTrace();
 		}
