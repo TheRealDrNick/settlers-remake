@@ -34,6 +34,7 @@ import jsettlers.ai.highlevel.pioneers.PioneerGroup;
 import jsettlers.ai.highlevel.pioneers.target.SameBlockedPartitionLikePlayerFilter;
 import jsettlers.ai.highlevel.pioneers.target.SurroundedByResourcesFilter;
 import jsettlers.common.CommonConstants;
+import jsettlers.common.ai.EPlayerType;
 import jsettlers.common.buildings.EBuildingType;
 import jsettlers.common.landscape.EResourceType;
 import jsettlers.common.map.shapes.HexGridArea;
@@ -515,10 +516,30 @@ class WhatToDoAi implements IWhatToDoAi {
 		if (isLackOfSettlers()) {
 			releasePioneers(10);
 		} else if (aiStatistics.getBorderIngestibleByPioneersOf(playerId).isEmpty() || !aiStatistics.getEnemiesInTownOf(playerId).isEmpty()) {
-			releasePioneers(Integer.MAX_VALUE);
+			// Border exhausted (or enemies in town): normally convert every pioneer back to a bearer.
+			// But if we're colonizing across water, keep a squad's worth of pioneers reserved near home so
+			// ColonizationModule can collect and board them (otherwise it re-raises them every tick and they
+			// get released here the next tick, so the squad never forms). Home under attack -> release all (defense first).
+			if (aiStatistics.getEnemiesInTownOf(playerId).isEmpty() && isColonizingAcrossWater()) {
+				int pioneers = aiStatistics.getPositionsOfMovablesWithTypeForPlayer(playerId, EMovableType.PIONEER).size();
+				releasePioneers(Math.max(0, pioneers - COLONIZATION_SQUAD_RESERVE));
+			} else {
+				releasePioneers(Integer.MAX_VALUE);
+			}
 		} else if (aiStatistics.getNumberOfTotalBuildingsForPlayer(playerId) >= 4) {
 			sendOutPioneers();
 		}
+	}
+
+	// matches ColonizationModule.SQUAD_SIZE (the pioneers ColonizationModule boards per beachhead run)
+	private static final int COLONIZATION_SQUAD_RESERVE = 4;
+
+	private boolean isColonizingAcrossWater() {
+		EPlayerType type = mainGrid.getPartitionsGrid().getPlayer(playerId).getPlayerType();
+		boolean colonizer = type == EPlayerType.AI_HARD || type == EPlayerType.AI_VERY_HARD;
+		return colonizer
+				&& aiStatistics.getNumberOfBuildingTypeForPlayer(DOCKYARD, playerId) > 0
+				&& !aiStatistics.getPositionsOfMovablesWithTypeForPlayer(playerId, EMovableType.FERRY).isEmpty();
 	}
 
 	private void releasePioneers(int numberOfPioneers) {
