@@ -174,12 +174,14 @@ public abstract class SoldierMovable extends AttackableHumanMovable implements I
 
 									condition(mov -> !mov.enemy.isAlive()), // enemy might die even if the attack fails
 
-									// LEASH (human only): the enemy is out of attack range, so we'd have to chase. If we have already been pulled
-									// beyond the leash from where we started defending, break off and walk back to that post instead of following a
-									// hit-and-run raider across the map. (Adjacent enemies were already handled by attackEnemy() above, so this
-									// never interrupts an actual fight.)
-									guard(mov -> mov.player.getPlayerType() == EPlayerType.HUMAN && mov.defenseAnchor != null
-													&& mov.position.getOnGridDistTo(mov.defenseAnchor) > HUMAN_DEFENSE_LEASH_RADIUS,
+									// LEASH (human only): the enemy is out of attack range, so we'd have to chase. Don't pursue an enemy that sits
+									// further than the leash from where we started defending - hold the post instead of following a hit-and-run raider
+									// across the map. Keyed on the ENEMY's distance from the post (not our own): so a soldier chases up to the leash and
+									// then simply holds, rather than walking out to the leash and snapping back over and over (which oscillated against a
+									// stationary target such as a distant enemy tower). Adjacent enemies were already handled by attackEnemy() above, so
+									// this never interrupts an actual fight.
+									guard(mov -> mov.player.getPlayerType() == EPlayerType.HUMAN && mov.defenseAnchor != null && mov.enemy != null
+													&& mov.enemy.getPosition().getOnGridDistTo(mov.defenseAnchor) > HUMAN_DEFENSE_LEASH_RADIUS,
 										action(mov -> {
 											mov.currentTarget = mov.defenseAnchor; // return to post (walked by the currentTarget guard below)
 											mov.enemyNearby = false;               // stop pursuing; we re-engage only if an enemy reaches the post again
@@ -369,7 +371,11 @@ public abstract class SoldierMovable extends AttackableHumanMovable implements I
 	 * never record an anchor, so their behaviour - and the difficulty suite - is unaffected.
 	 */
 	private void rememberDefensePostIfIdle() {
-		if (player.getPlayerType() == EPlayerType.HUMAN && !enemyNearby && defenseAnchor == null) {
+		// Only anchor a defence post when the soldier is genuinely HOLDING one - not while it is carrying out a player move/attack/patrol
+		// order. Otherwise an order (e.g. "attack that distant tower") would set an anchor the moment the soldier got shot en route, and the
+		// leash would then yank it back and forth instead of letting it reach the target. A deliberate order must never be leashed.
+		if (player.getPlayerType() == EPlayerType.HUMAN && !enemyNearby && defenseAnchor == null
+				&& currentTarget == null && goToTarget == null && patrolStep == -1) {
 			defenseAnchor = position;
 		}
 	}
