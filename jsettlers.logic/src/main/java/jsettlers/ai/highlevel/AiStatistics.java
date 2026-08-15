@@ -1065,6 +1065,68 @@ public class AiStatistics {
 				.isPresent();
 	}
 
+	// how far around a candidate empty-island beachhead we look for corn-plantable ground (roughly a farm's work area), and the minimum such
+	// tiles required before the AI colonizes a SPACE island - so it only settles a farmland island worth a farm, never a barren rock coast.
+	private static final int COLONIZATION_SPACE_FARMLAND_RADIUS = 10;
+	private static final int COLONIZATION_MIN_SPACE_FARMLAND = 6;
+
+	/**
+	 * SPACE fallback for {@link jsettlers.ai.army.ColonizationModule}: used only when NO ore deposit qualifies as a colonization target, this
+	 * finds a worthwhile EMPTY beachhead to settle for its farmland instead (the owner's "if there's just space, build up a wheat/farm economy"
+	 * case). A tile qualifies iff it is (a) flat farm-ground on an across-water landmass (not the player's own), (b) coast-SUPPLIABLE from the
+	 * ferry's dock water - the SAME {@link #isDepositCoastSuppliable} check the ore path uses, so the follow-on FARM's build goods + scythe can
+	 * ship in and its crop can ship home, (c) has a ferry-navigable landing beside it, and (d) has enough corn-plantable ground nearby to feed a
+	 * farm. Returns the beachhead nearest {@code embarkationWater}, ties broken by lowest x then y (deterministic, no randomness). Returns null
+	 * when no across-water farmland island is reachable - so on land / single-partition maps colonization stays inert exactly as before.
+	 *
+	 * ponytail: full-grid scan per heavy tick (only on no-ore maps that reach here); mirrors ColonizationBuildModule.scanOwnedForeignTiles and
+	 * is gated behind a dockyard, so land maps never pay it. Memoize per (playerId, embarkationWater) on static terrain if it ever shows up hot.
+	 */
+	public ShortPoint2D findSeaReachableEmptyBeachhead(byte playerId, ShortPoint2D embarkationWater) {
+		if (playerStatistics[playerId].referencePosition == null || embarkationWater == null) {
+			return null; // no base yet, or no navigable embarkation coast, so reachability is undefined
+		}
+		short width = mainGrid.getWidth();
+		short height = mainGrid.getHeight();
+		ShortPoint2D best = null;
+		int bestDistance = Integer.MAX_VALUE;
+		for (short x = 0; x < width; x++) {
+			for (short y = 0; y < height; y++) {
+				ELandscapeType type = landscapeGrid.getLandscapeTypeAt(x, y);
+				if (type != ELandscapeType.GRASS && type != ELandscapeType.EARTH && type != ELandscapeType.FLATTENED) {
+					continue; // cheap pre-filter: a farm beachhead must sit on flat grass/earth (mirrors ColonizationBuildModule.isFarmGround)
+				}
+				if (landscapeGrid.isBlockedFor(x, y, false)) {
+					continue; // not walkable ground - a pioneer could not claim it and a farm could not stand there
+				}
+				if (hasPlayersBlockedPartition(playerId, x, y)) {
+					continue; // on our own landmass - reachable by land, not an across-water colonization target
+				}
+				ShortPoint2D beachhead = new ShortPoint2D(x, y);
+				int distance = embarkationWater.getOnGridDistTo(beachhead);
+				if (distance >= bestDistance) {
+					continue; // already have a nearer valid candidate (equal distance kept in x-then-y order) - skip the expensive checks
+				}
+				if (!isDepositCoastSuppliable(beachhead, embarkationWater)) {
+					continue; // the claimed beachhead partition would not touch a cargo-ship coast - a farm there could not be supplied/exported
+				}
+				if (findSeaReachableLandingNear(beachhead, embarkationWater) == null) {
+					continue; // no ferry-navigable landing beside it - settlers could never be dropped here
+				}
+				int plantable = HexGridArea.stream(x, y, 0, COLONIZATION_SPACE_FARMLAND_RADIUS)
+						.filterBounds(width, height)
+						.filter((px, py) -> mainGrid.isCornPlantable(new ShortPoint2D(px, py)))
+						.count();
+				if (plantable < COLONIZATION_MIN_SPACE_FARMLAND) {
+					continue; // not enough farmland nearby to make a farm worthwhile
+				}
+				bestDistance = distance;
+				best = beachhead;
+			}
+		}
+		return best;
+	}
+
 	/**
 	 * @return a walkable land tile that is (a) walk-connected to the ore's mountain-foot and (b) borders water on the {@code embarkationWater} sea
 	 *         partition - i.e. the coast tile in the ore's own walk region that a cargo ship can dock beside. Claiming this tile gives the

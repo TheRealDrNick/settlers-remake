@@ -239,7 +239,24 @@ public class ColonizationModule extends ArmyModule {
 			}
 		}
 		ColonizationTarget chosen = bestSuppliable != null ? bestSuppliable : bestFallback;
-		return chosen;
+		if (chosen != null) {
+			return chosen;
+		}
+		// SPACE fallback: no ore deposit qualified (a map whose reachable islands are just farmland/space). We only reach here because the
+		// "want to colonize" gate already passed (home land nearly exhausted, or spare settlers), so rather than never colonizing, settle a
+		// worthwhile EMPTY island for its farmland: the nearest coast-suppliable beachhead on an across-water landmass with farmland nearby.
+		// The follow-on ColonizationBuildModule already develops such a beachhead into a self-producing FARM and ships the crop home (its
+		// EOutpostKind.FARM path). Inert on land / single-partition maps: no across-water farmland island -> null, exactly as before.
+		ShortPoint2D spaceBeachhead = parent.aiStatistics.findSeaReachableEmptyBeachhead(playerId, dockWater);
+		if (spaceBeachhead != null) {
+			ShortPoint2D landing = parent.aiStatistics.getSeaReachableLandingNear(playerId, spaceBeachhead, dockWater);
+			if (landing != null) {
+				// a space target has no ore point: use the beachhead tile itself as the walk goal, so commandBeachhead still marches the landed
+				// pioneers onto claimable coastal ground (findOreRegionCoastShore then secures its sea coast, keeping the claim suppliable).
+				return new ColonizationTarget(spaceBeachhead, landing);
+			}
+		}
+		return null;
 	}
 
 	/** Static, pre-claim coast-suppliability query for Phase-1 target selection - shared with the build module (see AiStatistics). */
