@@ -10,6 +10,7 @@ JSettlers is a Java remake of *The Settlers 3* (Gradle multi-module, desktop + A
 - Compile logic only (fast feedback): `./gradlew :jsettlers.logic:compileJava :jsettlers.logic:compileTestJava --no-daemon`
 - Run a single test: `./gradlew :jsettlers.logic:test --tests 'jsettlers.integration.ai.ColonizationIT' --no-daemon --info`
 - Desktop entry point: `jsettlers.main.swing/.../SwingManagedJSettlers.java`. Packaging/running the game is covered in the upstream wiki (linked from README.md); it needs original Settlers 3 `GFX`/`SND` data files to run.
+- Interactive dev run: `./gradlew :jsettlers.main.swing:run --args="--settlers-folder=<path to GFX/SND/Map>"` opens the real GUI. **"Start Single Player Game" shows an empty map list under this invocation** — `SwingResourceLoader.loadDefaultMapFolders()` scans `<cwd>/maps/` for `.rmap` files, but this `run` task's working directory is the `jsettlers.main.swing/` module dir, not the repo root where `maps/release/*.rmap` actually live. Fix: copy (don't move) `maps/release/` into `jsettlers.main.swing/maps/release/` before launching — it's gitignored, regenerate it any time the list looks empty.
 - Clear stuck Gradle daemons with `./gradlew --stop`. **Never `taskkill //IM java.exe`** — a user's running game is a `java` process and will be killed with it.
 
 ## Module map (big picture)

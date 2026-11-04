@@ -30,6 +30,7 @@ gen
 save
 logs
 /replayForSavegame.log
+/jsettlers.main.swing/maps/
 
 out/
 
